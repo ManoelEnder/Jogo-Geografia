@@ -113,6 +113,11 @@ namespace NucleoVivo
             Box((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f, (xMax - xMin) * 0.5f, (yMax - yMin) * 0.5f, radius, c);
         }
 
+        public void Rect01(float xMin, float yMin, float xMax, float yMax, Func<Vector2, Color> c)
+        {
+            Box((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f, (xMax - xMin) * 0.5f, (yMax - yMin) * 0.5f, 0f, c);
+        }
+
         public void Line(float x0, float y0, float x1, float y1, float thickness, Color c)
         {
             Vector2 a = new Vector2(X(x0), y0), b = new Vector2(X(x1), y1);

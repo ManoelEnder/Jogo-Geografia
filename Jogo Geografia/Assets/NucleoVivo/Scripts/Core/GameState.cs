@@ -43,6 +43,7 @@ namespace NucleoVivo
         // Permanente
         public int nucleos;
         public List<IdLevel> permanentLevels = new List<IdLevel>();
+        public List<string> openAreas = new List<string>();
         public int generation = 1;
         public bool tutorialDone;
         public bool soundOn = true;

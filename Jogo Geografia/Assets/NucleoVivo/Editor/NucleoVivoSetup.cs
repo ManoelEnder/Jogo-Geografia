@@ -64,6 +64,14 @@ namespace NucleoVivo.EditorTools
             EditorGUIUtility.PingObject(Selection.activeObject);
         }
 
+        [MenuItem("Núcleo Vivo/Configurar projeto para PC (16:9)", priority = 30)]
+        static void MenuConfigurePc()
+        {
+            ConfigurePlayer();
+            var cfg = EnsureConfig();
+            Debug.Log("[Núcleo Vivo] Projeto configurado para PC; áreas do mapa: " + cfg.areas.Count);
+        }
+
         [MenuItem("Núcleo Vivo/Apagar save local", priority = 40)]
         static void MenuDeleteSave()
         {
@@ -81,6 +89,7 @@ namespace NucleoVivo.EditorTools
                 cfg.ResetToDefaults();
                 AssetDatabase.CreateAsset(cfg, ConfigPath);
             }
+            if (cfg.areas == null || cfg.areas.Count == 0) { cfg.FillMissingDefaults(); EditorUtility.SetDirty(cfg); }
             if (cfg.spriteMaterial == null)
             {
                 cfg.spriteMaterial = AssetDatabase.LoadAssetAtPath<Material>(UnlitMaterialPath);
@@ -153,12 +162,12 @@ namespace NucleoVivo.EditorTools
 
         static void ConfigurePlayer()
         {
-            PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
-            PlayerSettings.allowedAutorotateToLandscapeLeft = false;
-            PlayerSettings.allowedAutorotateToLandscapeRight = false;
+            // Jogo de PC em tela horizontal (16:9).
+            PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+            PlayerSettings.allowedAutorotateToPortrait = false;
             PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
-            PlayerSettings.defaultScreenWidth = 540;
-            PlayerSettings.defaultScreenHeight = 960;
+            PlayerSettings.defaultScreenWidth = 1280;
+            PlayerSettings.defaultScreenHeight = 720;
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
             PlayerSettings.resizableWindow = true;
         }

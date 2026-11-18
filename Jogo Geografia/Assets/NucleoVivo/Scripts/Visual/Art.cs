@@ -257,6 +257,208 @@ namespace NucleoVivo
             return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Center, WorldPPU, 0, SpriteMeshType.FullRect);
         }
 
+        // ---------- áreas do mapa e vida ----------
+        static Color C(string hex) { ColorUtility.TryParseHtmlString(hex, out var c); return c; }
+
+        /// <summary>Padrão xadrez de 1 pixel (névoa das áreas trancadas). Usar com drawMode Tiled.</summary>
+        public static Sprite Checker => Get("checker", () =>
+        {
+            const int n = 64; // ladrilho grande para não gerar geometria demais no modo Tiled
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat, name = "checker" };
+            var px = new Color[n * n];
+            for (int y = 0; y < n; y++) for (int x = 0; x < n; x++) px[y * n + x] = ((x + y) & 1) == 0 ? Color.white : Color.clear;
+            tex.SetPixels(px);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, n, n), Center, WorldPPU, 0, SpriteMeshType.FullRect);
+        });
+
+        static readonly Color[] Walls = { C("#B9B4A8"), C("#A0705C"), C("#8E9F8C"), C("#C2B7A0") };
+        static readonly Color[] Roofs = { C("#6B3B32"), C("#4C5257"), C("#5E4436"), C("#7A4A3A") };
+
+        public static Sprite House(int v) => Get("house" + v, () =>
+        {
+            var p = new Painter(26, 24, true);
+            Color wall = Walls[v % Walls.Length], roof = Roofs[v % Roofs.Length];
+            p.Rect01(0.12f, 0.0f, 0.88f, 0.55f, q => q.x < 0.6f ? wall : Color.Lerp(wall, Color.black, 0.2f));
+            p.Poly(q => q.x / (26f / 24f) < 0.5f ? roof : Color.Lerp(roof, Color.black, 0.25f), V(0.02f, 0.52f), V(0.98f, 0.52f), V(0.5f, 0.97f));
+            p.Rect01(0.44f, 0.0f, 0.58f, 0.3f, C("#3A2C26"));
+            if (v % 2 == 0) p.Rect01(0.7f, 0.7f, 0.78f, 0.9f, C("#5A5A58")); // chaminé
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "house" + v);
+        });
+
+        public static Sprite Crane => Get("crane", () =>
+        {
+            var p = new Painter(44, 70, true);
+            Color c = C("#B5523B"), d = C("#7E3528");
+            float t = 1.4f / 70f;
+            p.Line(0.2f, 0f, 0.2f, 0.9f, t * 2, c);
+            p.Line(0.34f, 0f, 0.34f, 0.9f, t * 2, d);
+            for (int i = 0; i < 6; i++) { float y = i * 0.15f; p.Line(0.2f, y, 0.34f, y + 0.15f, t, c); }
+            p.Line(0.05f, 0.9f, 0.98f, 0.9f, t * 2, c);
+            p.Line(0.05f, 0.86f, 0.98f, 0.86f, t, d);
+            p.Line(0.27f, 0.99f, 0.98f, 0.9f, t, d);
+            p.Line(0.27f, 0.99f, 0.05f, 0.9f, t, d);
+            p.Rect01(0.03f, 0.8f, 0.15f, 0.88f, C("#4B5553"));
+            p.Rect01(0.36f, 0.82f, 0.48f, 0.9f, C("#C9CCC6"));
+            p.Line(0.85f, 0.86f, 0.85f, 0.55f, 1f / 70f, C("#2B2F30"));
+            p.Rect01(0.81f, 0.5f, 0.89f, 0.55f, C("#2B2F30"));
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "crane");
+        });
+
+        public static Sprite Container => Get("container", () =>
+        {
+            var p = new Painter(18, 8, true);
+            p.Rect01(0.0f, 0.0f, 1f, 1f, Color.white);
+            for (int i = 1; i < 6; i++) { float x = i / 6f; p.Rect01(x, 0.1f, x + 1f / 18f, 0.9f, new Color(0.72f, 0.72f, 0.72f, 1)); }
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "container");
+        });
+
+        public static Sprite Car => Get("car", () =>
+        {
+            var p = new Painter(12, 7, true);
+            p.Rect01(0.0f, 0.2f, 1f, 0.6f, Color.white);
+            p.Rect01(0.22f, 0.55f, 0.75f, 0.95f, Color.white);
+            p.Rect01(0.3f, 0.6f, 0.45f, 0.88f, C("#2C3438"));
+            p.Rect01(0.52f, 0.6f, 0.68f, 0.88f, C("#2C3438"));
+            p.Rect01(0.1f, 0.0f, 0.3f, 0.25f, C("#151819"));
+            p.Rect01(0.7f, 0.0f, 0.9f, 0.25f, C("#151819"));
+            return WorldSprite(p, BottomCenter, "car");
+        });
+
+        public static Sprite Barge => Get("barge", () =>
+        {
+            var p = new Painter(40, 12, true);
+            p.Poly(C("#3B3F3D"), V(0f, 0.55f), V(1f, 0.55f), V(0.92f, 0f), V(0.06f, 0f));
+            p.Rect01(0.0f, 0.5f, 1f, 0.6f, C("#7E3528"));
+            p.Rect01(0.1f, 0.6f, 0.3f, 0.85f, C("#6E7774")); p.Rect01(0.32f, 0.6f, 0.52f, 0.85f, C("#55634F"));
+            p.Rect01(0.75f, 0.6f, 0.92f, 1f, C("#C9CCC6"));
+            p.Rect01(0.78f, 0.75f, 0.84f, 0.9f, C("#2C3438"));
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "barge");
+        });
+
+        public static Sprite Bird(int frame) => Get("bird" + frame, () =>
+        {
+            var tex = new Texture2D(5, 3, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, name = "bird" };
+            var px = new Color[15];
+            string[] f = frame == 0 ? new[] { "#...#", ".#.#.", "..#.." } : new[] { ".....", "##.##", "..#.." };
+            for (int y = 0; y < 3; y++) for (int x = 0; x < 5; x++) px[(2 - y) * 5 + x] = f[y][x] == '#' ? new Color(0.08f, 0.1f, 0.11f, 1) : Color.clear;
+            tex.SetPixels(px); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, 5, 3), Center, WorldPPU, 0, SpriteMeshType.FullRect);
+        });
+
+        public static Sprite Person(int frame) => Get("person" + frame, () =>
+        {
+            var tex = new Texture2D(3, 7, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, name = "person" };
+            Color s = C("#C99A7A"), b = Color.white, l = C("#2C3438"), n = Color.clear;
+            Color[] rows = frame == 0
+                ? new[] { n, s, n, b, b, b, b, b, b, n, l, n, l, n, l }
+                : new[] { n, s, n, b, b, b, b, b, b, n, l, n, n, l, n };
+            var px = new Color[21];
+            // linhas de cima para baixo: cabeça, tronco(2), pernas(2) — 5 linhas úteis em 7
+            Color[][] grid =
+            {
+                new[] { n, s, n }, new[] { n, s, n }, new[] { b, b, b }, new[] { b, b, b }, new[] { n, b, n },
+                frame == 0 ? new[] { l, n, l } : new[] { n, l, n }, frame == 0 ? new[] { l, n, l } : new[] { n, l, n },
+            };
+            for (int y = 0; y < 7; y++) for (int x = 0; x < 3; x++) px[(6 - y) * 3 + x] = grid[y][x];
+            tex.SetPixels(px); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, 3, 7), new Vector2(0.5f, 0f), WorldPPU, 0, SpriteMeshType.FullRect);
+        });
+
+        public static Sprite Lamp => Get("lamp", () =>
+        {
+            var p = new Painter(6, 20, true);
+            p.Rect01(0.4f, 0f, 0.6f, 0.85f, C("#4B5553"));
+            p.Rect01(0.1f, 0.85f, 0.9f, 0.95f, C("#4B5553"));
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "lamp");
+        });
+
+        public static Sprite Fence => Get("fence", () =>
+        {
+            var p = new Painter(12, 8, true);
+            p.Rect01(0f, 0f, 0.17f, 1f, C("#6E7774"));
+            p.Rect01(0f, 0.7f, 1f, 0.78f, C("#9AA1A0"));
+            p.Rect01(0f, 0.35f, 1f, 0.43f, C("#9AA1A0"));
+            return WorldSprite(p, BottomCenter, "fence");
+        });
+
+        public static Sprite LabBuilding => Get("lab", () =>
+        {
+            var p = new Painter(64, 48, true);
+            Color w = C("#C9CCC6"), m = C("#A3A9A6"), d = C("#6E7774");
+            p.Rect01(0.05f, 0f, 0.7f, 0.55f, q => q.x / (64f / 48f) < 0.5f ? w : m);
+            for (int r = 0; r < 3; r++) for (int c = 0; c < 6; c++)
+                p.Rect01(0.1f + c * 0.095f, 0.08f + r * 0.15f, 0.16f + c * 0.095f, 0.17f + r * 0.15f, C("#2C3438"));
+            p.Rect01(0.72f, 0f, 0.98f, 0.4f, d);
+            Vector2 dc = V(0.85f * 64f / 48f, 0.4f);
+            p.Shape(q => Mathf.Max((q - dc).magnitude - 0.17f, 0.4f - q.y), q => q.x < dc.x ? w : m, Rect.MinMaxRect(0.7f, 0.4f, 1f, 0.6f));
+            p.Rect01(0.83f, 0.42f, 0.86f, 0.56f, C("#2C3438"));
+            p.Rect01(0.3f, 0.55f, 0.32f, 0.85f, d);
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "lab");
+        });
+
+        public static Sprite ControlCenter => Get("controlCenter", () =>
+        {
+            var p = new Painter(72, 44, true);
+            Color w = C("#B9BDB6"), m = C("#959C98");
+            p.Rect01(0.02f, 0f, 0.98f, 0.7f, q => q.x / (72f / 44f) < 0.55f ? w : m);
+            p.Rect01(0.0f, 0.68f, 1f, 0.76f, C("#4C5257"));
+            p.Rect01(0.1f, 0.25f, 0.9f, 0.55f, C("#22292B"));
+            p.Rect01(0.42f, 0f, 0.58f, 0.2f, C("#3A2C26"));
+            p.Rect01(0.75f, 0.76f, 0.78f, 0.98f, C("#6E7774"));
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "controlCenter");
+        });
+
+        public static Sprite Transformer => Get("transformer", () =>
+        {
+            var p = new Painter(12, 14, true);
+            p.Rect01(0.1f, 0f, 0.9f, 0.6f, C("#B9BDB6"));
+            for (int i = 0; i < 3; i++) p.Rect01(0.15f + i * 0.25f, 0.08f, 0.25f + i * 0.25f, 0.52f, C("#8E948F"));
+            p.Rect01(0.2f, 0.6f, 0.3f, 0.95f, C("#8A5A44")); p.Rect01(0.7f, 0.6f, 0.8f, 0.95f, C("#8A5A44"));
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "transformer");
+        });
+
+        /// <summary>Placa de madeira com texto (nome das áreas).</summary>
+        public static Sprite Sign(string text, Color textColor) => Get("sign|" + text + "|" + textColor, () =>
+        {
+            int w = PixelFont.MeasureWidth(text) + 8, h = PixelFont.CellHeight + 6;
+            var tex = new Texture2D(w, h + 6, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, name = "sign" };
+            var px = new Color[w * (h + 6)];
+            Color wood = C("#5E4436"), woodD = C("#3E2C24");
+            for (int y = 0; y < h + 6; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = Color.clear;
+                    if (y >= 6)
+                    {
+                        int yy = y - 6;
+                        bool border = x == 0 || x == w - 1 || yy == 0 || yy == h - 1;
+                        c = border ? Ink : (yy == 1 ? woodD : wood);
+                    }
+                    else if (x == 3 || x == w - 4) c = woodD;
+                    px[y * w + x] = c;
+                }
+            tex.SetPixels(px);
+            var txt = PixelFont.Render(text, textColor, Ink);
+            for (int y = 0; y < txt.height; y++)
+                for (int x = 0; x < txt.width; x++)
+                {
+                    Color c = txt.GetPixel(x, y);
+                    if (c.a > 0.5f) tex.SetPixel(x + 4, y + 8, c);
+                }
+            tex.Apply();
+            if (Application.isPlaying) Object.Destroy(txt); else Object.DestroyImmediate(txt);
+            return Sprite.Create(tex, new Rect(0, 0, w, h + 6), new Vector2(0.5f, 0f), WorldPPU, 0, SpriteMeshType.FullRect);
+        });
+
         // ---------- ícones ----------
         public static Sprite Icon(IconKind kind) => PixelIcons.Get(kind);
     }

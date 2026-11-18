@@ -452,12 +452,73 @@ namespace NucleoVivo
             },
         };
 
+        static readonly Dictionary<IconKind, string[]> Extra = new Dictionary<IconKind, string[]>
+        {
+            [IconKind.House] = new[]
+            {
+                "................",
+                "......rr........",
+                ".....rrrr...d...",
+                "....rrrrrr..d...",
+                "...rrrrrrrr.d...",
+                "..rrrrrrrrrrd...",
+                "...cccccccc.....",
+                "...caacccmc.....",
+                "...caacccmc.....",
+                "...ccccppcc.....",
+                "...ccccppcc.....",
+                "...ccccppcc.....",
+                ".GGGGGGGGGGGGGG.",
+                "................",
+                "................",
+                "................",
+            },
+            [IconKind.Port] = new[]
+            {
+                "................",
+                ".....dddddddddd.",
+                ".....d.......d..",
+                ".....d.......d..",
+                ".....d......ccc.",
+                ".....d......ccc.",
+                ".....d..........",
+                "..rrraamm.......",
+                "..rrraamm.......",
+                ".ddddddddddd....",
+                "..ddddddddd.....",
+                "PPPPPPPPPPPPPPPP",
+                "PpPPpPPPpPPPpPPP",
+                "pppppppppppppppp",
+                "................",
+                "................",
+            },
+            [IconKind.Map] = new[]
+            {
+                "................",
+                ".cccc.mmmm.cccc.",
+                ".cccc.mmmm.cccc.",
+                ".cGcc.mmmm.ccGc.",
+                ".cGGc.mGGm.cGGc.",
+                ".ccGc.mmGm.cGcc.",
+                ".cccc.mmmG.cccc.",
+                ".ccrc.mmmm.cccc.",
+                ".crrr.mmmm.cccc.",
+                ".ccrc.mpmm.cccc.",
+                ".cccc.ppmm.cccc.",
+                ".cccc.pmmm.cccc.",
+                ".cccc.mmmm.cccc.",
+                "................",
+                "................",
+                "................",
+            },
+        };
+
         static readonly Dictionary<IconKind, Sprite> cache = new Dictionary<IconKind, Sprite>();
 
         public static Sprite Get(IconKind kind)
         {
             if (cache.TryGetValue(kind, out var s) && s != null) return s;
-            if (!Maps.TryGetValue(kind, out var map)) map = Maps[IconKind.Energy];
+            if (!Maps.TryGetValue(kind, out var map) && !Extra.TryGetValue(kind, out map)) map = Maps[IconKind.Energy];
             s = Build(map, "ícone " + kind);
             cache[kind] = s;
             return s;

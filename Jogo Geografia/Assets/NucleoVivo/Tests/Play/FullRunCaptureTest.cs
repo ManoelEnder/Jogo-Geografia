@@ -48,7 +48,7 @@ namespace NucleoVivo.Tests
             Assert.IsNotNull(gm, "GameManager na cena");
             Assert.IsNotNull(ui, "GameUI na cena");
             Assert.IsNotNull(plant, "PlantView na cena");
-            yield return SetResolution(1080, 1920);
+            yield return SetResolution(1920, 1080);
         }
 
         [UnityTearDown]
@@ -156,7 +156,7 @@ namespace NucleoVivo.Tests
             // 4. Eventos: um negativo e um positivo, com efeitos e tempos
             Assert.IsTrue(s.eventsEnabled);
             gm.DevTriggerEvent("falha_turbina");
-            Call("ShowTab", 1);
+            Call("ShowTab", 2);
             yield return Wait(0.3f);
             yield return Capture("05_evento_pendente");
             double passiveBefore = gm.Economy.PassivePerSecond;
@@ -187,6 +187,27 @@ namespace NucleoVivo.Tests
             Assert.AreEqual("audiencia", s.pendingEventId);
             Assert.IsTrue(gm.ChooseEvent(1));
 
+            // Áreas do mapa: abrir a Vila e o Porto e andar com a câmera
+            var vila = gm.Config.FindArea("vila");
+            var portoArea = gm.Config.FindArea("porto");
+            gm.DevAddEnergy(vila.cost + portoArea.cost);
+            Assert.IsTrue(gm.OpenArea(vila));
+            Assert.IsTrue(gm.OpenArea(portoArea));
+            Assert.IsTrue(gm.State.openAreas.Contains("vila"));
+            plant.FocusX(vila.mapX, true);
+            Call("ShowTab", 1);
+            yield return Wait(1.5f);
+            yield return Capture("06b_vila");
+            plant.FocusX(portoArea.mapX, true);
+            yield return Wait(1.5f);
+            yield return Capture("06c_porto");
+            plant.FocusX(gm.Config.FindArea("laboratorio").mapX, true);
+            yield return Wait(0.5f);
+            yield return Capture("06d_area_trancada");
+            Call("WorldDrag", new Vector2(600f, 0f));
+            yield return Wait(0.2f);
+            plant.FocusX(0f, true);
+
             // Etapa regional (mais bairros acesos)
             gm.DevAddEnergy(120000);
             BuyUntil("reator2", 1);
@@ -198,7 +219,7 @@ namespace NucleoVivo.Tests
 
             // 6. Renascimento
             Assert.IsTrue(gm.Rebirth.CanRebirth);
-            Call("ShowTab", 2);
+            Call("ShowTab", 3);
             yield return Wait(0.3f);
             yield return Capture("08_renascimento_pronto");
             int expected = gm.Rebirth.PendingNucleos;
@@ -216,16 +237,17 @@ namespace NucleoVivo.Tests
 
             var click = gm.Config.permanentUpgrades.Find(p => p.kind == PermanentKind.ClickBonus);
             Assert.IsTrue(gm.BuyPermanent(click));
-            Assert.AreEqual(2, gm.Economy.ClickValue, 1e-6);
+            double clickNow = gm.Economy.ClickValue;
+            Assert.Greater(clickNow, 2.0 - 1e-6, "Mãos experientes dobra o clique (mais o bônus da Vila)");
             Call("ShowTab", 0);
             Tap(5);
-            Assert.AreEqual(10, s.energy, 1e-6);
+            Assert.AreEqual(5 * clickNow, s.energy, 1e-6);
             yield return Wait(0.2f);
             yield return Capture("12_segunda_campanha");
 
-            // 7. Layout em tela mais alongada (ex.: 9:19.5)
-            yield return SetResolution(1080, 2340);
-            yield return Capture("13_tela_alta");
+            // 7. Outra resolução de PC
+            yield return SetResolution(1280, 720);
+            yield return Capture("13_1280x720");
         }
     }
 }

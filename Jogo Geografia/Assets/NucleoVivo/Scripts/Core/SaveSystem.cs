@@ -62,6 +62,7 @@ namespace NucleoVivo
         {
             if (s.upgradeLevels == null) s.upgradeLevels = new System.Collections.Generic.List<IdLevel>();
             if (s.permanentLevels == null) s.permanentLevels = new System.Collections.Generic.List<IdLevel>();
+            if (s.openAreas == null) s.openAreas = new System.Collections.Generic.List<string>();
             if (s.effects == null) s.effects = new System.Collections.Generic.List<ActiveEffect>();
             if (s.pendingEventId == null) s.pendingEventId = "";
             if (s.lastEventId == null) s.lastEventId = "";

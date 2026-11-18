@@ -168,6 +168,25 @@ namespace NucleoVivo.Tests
         }
 
         [Test]
+        public void AreasUnlockByProductionOpenByPaymentAndSurviveRebirth()
+        {
+            var vila = cfg.FindArea("vila");
+            Assert.IsNotNull(vila);
+            Assert.IsFalse(eco.IsAreaAvailable(vila));
+            state.energy = 1e9;
+            Assert.IsFalse(eco.OpenArea(vila), "ainda não liberada");
+            state.campaignProduced = vila.unlockAtProduced;
+            double click = eco.ClickValue;
+            Assert.IsTrue(eco.OpenArea(vila));
+            Assert.AreEqual(1e9 - vila.cost, state.energy, 1e-6);
+            Assert.Greater(eco.ClickValue, click);
+            Assert.IsFalse(eco.OpenArea(vila), "não abre duas vezes");
+            state.campaignProduced = 30000;
+            rb.Perform();
+            Assert.IsTrue(eco.IsAreaOpen(vila));
+        }
+
+        [Test]
         public void NucleosScaleWithSqrt()
         {
             Assert.AreEqual(2, rb.NucleosFor(100000));

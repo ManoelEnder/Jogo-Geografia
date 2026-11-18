@@ -9,7 +9,8 @@ namespace NucleoVivo
     public enum IconKind
     {
         Energy, ControlPanel, Turbine, Substation, Automation, CoolingTower, Reactor, Grid,
-        Heat, University, Wrench, Protest, Hearing, Press, Nucleo, Tap, Passive, Discount, Sound, Reputation, Settings, Lock
+        Heat, University, Wrench, Protest, Hearing, Press, Nucleo, Tap, Passive, Discount, Sound, Reputation, Settings, Lock,
+        House, Port, Map
     }
 
     public enum EventTone { Positive, Negative, Decision }
@@ -17,6 +18,26 @@ namespace NucleoVivo
     public enum EffectKind { None, PassiveMultiplier, ClickMultiplier, ReputationTemp }
 
     public enum PermanentKind { ClickBonus, PassiveBonus, EarlyDiscount }
+
+    public enum AreaKind { Vila, Porto, Laboratorio, Distribuicao }
+
+    public enum AreaBonus { ClickPercent, PassivePercent, CostDiscount }
+
+    /// <summary>Área do mapa que o jogador libera produzindo Energia e abre pagando. Fica aberta para sempre.</summary>
+    [Serializable]
+    public class AreaDef
+    {
+        public string id;
+        public string displayName;
+        [TextArea(2, 4)] public string description;
+        public IconKind icon;
+        public AreaKind kind;
+        [Tooltip("Centro da área no mapa (unidades do mundo).")] public float mapX;
+        [Tooltip("Energia produzida na campanha para poder abrir.")] public double unlockAtProduced;
+        [Tooltip("Custo em Energia para abrir.")] public double cost;
+        public AreaBonus bonus;
+        [Tooltip("0,25 = +25% (ou -25% no custo).")] public float bonusValue = 0.25f;
+    }
 
     [Serializable]
     public class UpgradeDef
@@ -98,6 +119,9 @@ namespace NucleoVivo
         public float eventIntervalMax = 120f;
         [Tooltip("Segundos até um evento pendente ser resolvido com a escolha padrão.")] public float pendingEventExpire = 180f;
         public List<EventDef> events = new List<EventDef>();
+
+        [Header("Áreas do mapa")]
+        public List<AreaDef> areas = new List<AreaDef>();
 
         [Header("Renascimento")]
         public double rebirthThreshold = 25000;
@@ -206,6 +230,14 @@ namespace NucleoVivo
                 },
             };
 
+            areas = new List<AreaDef>
+            {
+                new AreaDef { id = "vila", displayName = "Vila Operária", description = "Casas para as famílias da equipe. Turnos mais curtos, mãos mais firmes.", icon = IconKind.House, kind = AreaKind.Vila, mapX = -15f, unlockAtProduced = 1500, cost = 1000, bonus = AreaBonus.ClickPercent, bonusValue = 0.25f },
+                new AreaDef { id = "porto", displayName = "Porto do Ribeirão", description = "Barcaças trazem peças pelo rio e as turbinas param menos.", icon = IconKind.Port, kind = AreaKind.Porto, mapX = 15f, unlockAtProduced = 6000, cost = 4000, bonus = AreaBonus.PassivePercent, bonusValue = 0.25f },
+                new AreaDef { id = "laboratorio", displayName = "Laboratório da UVI", description = "A universidade testa peças antes da compra e negocia com fornecedores.", icon = IconKind.University, kind = AreaKind.Laboratorio, mapX = -29f, unlockAtProduced = 15000, cost = 10000, bonus = AreaBonus.CostDiscount, bonusValue = 0.15f },
+                new AreaDef { id = "distribuicao", displayName = "Centro de Distribuição", description = "Um centro de controle da rede em Nova Aurora. A energia chega mais longe.", icon = IconKind.Grid, kind = AreaKind.Distribuicao, mapX = 29f, unlockAtProduced = 40000, cost = 30000, bonus = AreaBonus.PassivePercent, bonusValue = 0.5f },
+            };
+
             permanentUpgrades = new List<PermanentUpgradeDef>
             {
                 new PermanentUpgradeDef { id = "maos", displayName = "Mãos experientes", description = "A equipe veterana dobra a Energia de cada toque.", icon = IconKind.Tap, kind = PermanentKind.ClickBonus, baseCost = 1, costStep = 1, valuePerLevel = 1f, maxLevel = 20 },
@@ -224,6 +256,16 @@ namespace NucleoVivo
             };
         }
 
+        /// <summary>Preenche listas que não existiam em versões antigas do asset (ex.: áreas).</summary>
+        public void FillMissingDefaults()
+        {
+            if (areas != null && areas.Count > 0) return;
+            var d = CreateInstance<GameConfig>();
+            d.ResetToDefaults();
+            areas = d.areas;
+            if (Application.isPlaying) Destroy(d); else DestroyImmediate(d);
+        }
+
         public static GameConfig CreateDefault()
         {
             var c = CreateInstance<GameConfig>();
@@ -233,5 +275,6 @@ namespace NucleoVivo
 
         public int UpgradeIndex(string id) => upgrades.FindIndex(u => u.id == id);
         public EventDef FindEvent(string id) => events.Find(e => e.id == id);
+        public AreaDef FindArea(string id) => areas.Find(a => a.id == id);
     }
 }

@@ -29,6 +29,7 @@ namespace NucleoVivo
         public event Action<int> Reborn;                    // núcleos ganhos
         public event Action StateReloaded;
         public event Action PermanentBought;
+        public event Action<AreaDef> AreaOpened;
 
         float autosaveTimer;
         bool dirty;
@@ -47,6 +48,7 @@ namespace NucleoVivo
                 Debug.LogWarning("[Núcleo Vivo] GameConfig não atribuído; usando valores padrão.");
                 config = GameConfig.CreateDefault();
             }
+            config.FillMissingDefaults();
             State = SaveSystem.Load(config, saveFileName);
             Economy = new Economy(config, () => State);
             Events = new EventDirector(config, Economy, () => State);
@@ -111,6 +113,14 @@ namespace NucleoVivo
                 Reborn?.Invoke(gained);
             }
             return gained;
+        }
+
+        public bool OpenArea(AreaDef a)
+        {
+            if (!Economy.OpenArea(a)) return false;
+            AreaOpened?.Invoke(a);
+            SaveNow();
+            return true;
         }
 
         public bool BuyPermanent(PermanentUpgradeDef p)

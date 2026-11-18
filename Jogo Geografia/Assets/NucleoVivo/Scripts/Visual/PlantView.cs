@@ -13,12 +13,17 @@ namespace NucleoVivo
     public class PlantView : MonoBehaviour
     {
         [Header("Câmera")]
-        [Tooltip("Meia largura do mundo que deve caber na tela.")] public float halfWorldWidth = 5.3f;
-        [Tooltip("Ponto do mundo que fica no centro da área livre entre o topo e o painel.")] public float focusY = 0.35f;
-        [Range(0, 1)] public float viewportBottom = 0.42f; // a interface ajusta em tempo real
-        [Range(0, 1)] public float viewportTop = 0.86f;
+        [Tooltip("Limites do mapa que a câmera pode mostrar.")] public Rect mapBounds = Rect.MinMaxRect(-37f, -6.2f, 37f, 9.5f);
+        [Range(0.5f, 1f)] public float minZoom = 0.6f;
+        [Range(1f, 2f)] public float maxZoom = 1.35f;
+        [Tooltip("Fração da tela coberta à direita pelo painel (a interface ajusta).")] [Range(0, 0.6f)] public float rightOccluded = 0.33f;
+
+        public float Zoom { get; private set; } = 1f;
+        Vector2 camTarget = new Vector2(0f, 0.3f), camPos = new Vector2(0f, 0.3f);
+        bool camInitialized;
 
         public Camera Cam { get; private set; }
+        public AreaView Areas { get; private set; }
         public Rect ReactorWorldRect => new Rect(reactorPos.x - 1.25f, reactorPos.y, 2.5f, 2.9f);
 
         // ---------- interno ----------
@@ -86,8 +91,11 @@ namespace NucleoVivo
             BuildPresenter();
 
             Build();
+            Areas = gameObject.AddComponent<AreaView>();
+            Areas.Init(this, worldRoot, spriteMat);
             if (gm != null)
             {
+                gm.AreaOpened += a => { RefreshCity(false); installFlash = 1f; shake = 0.4f; };
                 gm.Tapped += _ => Pulse();
                 gm.StructureTierChanged += OnTierChanged;
                 gm.StateReloaded += () => RefreshAll(true);
@@ -98,8 +106,8 @@ namespace NucleoVivo
 
         // ---------- pixel art: o mundo é desenhado numa textura pequena e ampliado sem filtro ----------
         [Header("Pixel art")]
-        [Tooltip("Largura alvo, em pixels, da imagem do cenário (o resto é ampliação inteira).")]
-        public int targetPixelWidth = 270;
+        [Tooltip("Altura alvo, em pixels, da imagem do cenário (o resto é ampliação inteira).")]
+        public int targetPixelHeight = 270;
 
         Camera presentCam;
         RawImage presentImage;
@@ -148,7 +156,7 @@ namespace NucleoVivo
         void EnsureLowRes()
         {
             var o = OutputSize();
-            int scale = Mathf.Max(1, Mathf.RoundToInt(Mathf.Min(o.x / (float)targetPixelWidth, o.y / (targetPixelWidth * 16f / 9f))));
+            int scale = Mathf.Max(1, Mathf.RoundToInt(o.y / (float)targetPixelHeight));
             int w = Mathf.CeilToInt(o.x / (float)scale), h = Mathf.CeilToInt(o.y / (float)scale);
             if (lowRes != null && lowRes.width == w && lowRes.height == h) return;
             if (lowRes != null) { Cam.targetTexture = null; lowRes.Release(); Destroy(lowRes); }
@@ -173,24 +181,57 @@ namespace NucleoVivo
             if (gm != null && !transitioning) RefreshUnlockGhosts();
         }
 
+        float BaseSize => (lowRes != null ? lowRes.height : 270) / (2f * Art.WorldPPU);
+        public float ViewHalfHeight => BaseSize * Zoom;
+        public float ViewHalfWidth => ViewHalfHeight * Mathf.Max(0.3f, Cam.aspect);
+
         void FitCamera()
         {
             if (Cam == null) return;
-            float aspect = Mathf.Max(0.3f, Cam.aspect);
-            float visibleFrac = Mathf.Max(0.25f, viewportTop - viewportBottom);
-            // garante que a largura caiba e que a área livre mostre ~8 unidades de altura
-            float sizeByWidth = halfWorldWidth / aspect;
-            float sizeByHeight = 4.4f / visibleFrac;
-            float size = Mathf.Max(sizeByWidth, Mathf.Min(sizeByHeight, sizeByWidth * 1.6f));
+            float size = ViewHalfHeight;
             Cam.orthographicSize = size;
-            float centerFrac = (viewportBottom + viewportTop) * 0.5f;
-            float y = focusY - (centerFrac - 0.5f) * 2f * size;
+            if (!camInitialized) { camInitialized = true; FocusX(0f, true); }
+            camTarget = Clamp(camTarget);
+            camPos = Vector2.Lerp(camPos, camTarget, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 10f));
             Vector2 sh = shake > 0 ? UnityEngine.Random.insideUnitCircle * shake * 0.08f : Vector2.zero;
             float unit = 2f * size / Mathf.Max(1, Cam.pixelHeight); // tamanho de 1 pixel no mundo
-            Vector2 pos = new Vector2(sh.x, y + sh.y);
+            Vector2 pos = camPos + sh;
             pos = new Vector2(Mathf.Round(pos.x / unit) * unit, Mathf.Round(pos.y / unit) * unit);
             Cam.transform.position = new Vector3(pos.x, pos.y, -10f);
         }
+
+        Vector2 Clamp(Vector2 c)
+        {
+            float hh = ViewHalfHeight, hw = ViewHalfWidth;
+            c.x = mapBounds.width > hw * 2 ? Mathf.Clamp(c.x, mapBounds.xMin + hw, mapBounds.xMax - hw) : mapBounds.center.x;
+            c.y = mapBounds.height > hh * 2 ? Mathf.Clamp(c.y, mapBounds.yMin + hh, mapBounds.yMax - hh) : mapBounds.center.y;
+            return c;
+        }
+
+        /// <summary>Arrasta a câmera pelo mapa. <paramref name="screenDelta"/> em pixels de tela.</summary>
+        public void PanByScreen(Vector2 screenDelta, float screenHeight)
+        {
+            float worldPerPixel = 2f * ViewHalfHeight / Mathf.Max(1f, screenHeight);
+            camTarget = Clamp(camTarget - screenDelta * worldPerPixel);
+            camPos = camTarget;
+        }
+
+        public void PanBy(Vector2 world) => camTarget = Clamp(camTarget + world);
+
+        /// <summary>Roda do mouse: valores positivos aproximam.</summary>
+        public void ZoomBy(float steps)
+        {
+            Zoom = Mathf.Clamp(Zoom * Mathf.Pow(0.88f, steps), minZoom, maxZoom);
+        }
+
+        /// <summary>Centraliza um ponto do mapa na parte da tela que o painel não cobre.</summary>
+        public void FocusX(float x, bool instant = false)
+        {
+            camTarget = Clamp(new Vector2(x + ViewHalfWidth * rightOccluded, camTarget.y));
+            if (instant) camPos = camTarget;
+        }
+
+        public Vector3 ViewportToWorld(Vector2 viewport) => Cam.ViewportToWorldPoint(new Vector3(viewport.x, viewport.y, 10f));
 
         // ---------- construção ----------
         SpriteRenderer Make(string name, Transform parent, Sprite sprite, Vector2 pos, Vector2 scale, Color color, int order)
@@ -237,49 +278,57 @@ namespace NucleoVivo
             worldRoot = new GameObject("Mundo").transform;
             worldRoot.SetParent(transform, false);
 
-            // Céu e estrelas
-            Make("Céu", worldRoot, Art.SkyGradient, new Vector2(0, -4.5f), Vector2.one, Color.white, -100);
-            Make("Céu baixo", worldRoot, Art.PixelBottom, new Vector2(0, -24f), new Vector2(40, 19.6f), Palette.SkyHorizon, -101);
-            for (int i = 0; i < 40; i++)
+            // Céu e estrelas (o mapa vai de -37 a 37 em x)
+            for (int i = -3; i <= 3; i++)
+                Make("Céu", worldRoot, Art.SkyGradient, new Vector2(i * 13.3f, -4.5f), Vector2.one, Color.white, -100);
+            Make("Céu baixo", worldRoot, Art.PixelBottom, new Vector2(0, -24f), new Vector2(120, 19.6f), Palette.SkyHorizon, -101);
+            for (int i = 0; i < 220; i++)
             {
-                float x = (float)(rnd.NextDouble() * 12 - 6), y = 5.2f + (float)rnd.NextDouble() * 6f;
-                float sz = rnd.NextDouble() < 0.2 ? 2f / Art.WorldPPU : 1f / Art.WorldPPU;
+                float x = (float)(rnd.NextDouble() * 80 - 40), y = 5.4f + (float)rnd.NextDouble() * 5f;
+                float sz = rnd.NextDouble() < 0.15 ? 2f / Art.WorldPPU : 1f / Art.WorldPPU;
                 stars.Add(Make("estrela", worldRoot, Art.Pixel, new Vector2(x, y), new Vector2(sz, sz), Color.white, -99));
             }
 
             BuildCity();
 
-            // Colinas
-            Make("Colinas distantes", worldRoot, Art.Hills(3, Palette.HillFar, Color.Lerp(Palette.HillFar, Palette.SkyHorizon, 0.6f)), new Vector2(0, 1.15f), Vector2.one, Color.white, -80);
-            Make("Colinas", worldRoot, Art.Hills(11, Palette.HillMid, Palette.GreenLight), new Vector2(0.6f, 0.3f), Vector2.one, Color.white, -75);
-            for (int i = 0; i < 22; i++)
+            // Colinas em faixas repetidas
+            for (int i = -3; i <= 3; i++)
             {
-                float x = -6.5f + i * 0.62f + (float)rnd.NextDouble() * 0.3f;
+                Make("Colinas distantes", worldRoot, Art.Hills(3 + (i & 1), Palette.HillFar, Color.Lerp(Palette.HillFar, Palette.SkyHorizon, 0.6f)), new Vector2(i * 13.9f, 1.15f), Vector2.one, Color.white, -80);
+                Make("Colinas", worldRoot, Art.Hills(11 + (i & 1) * 5, Palette.HillMid, Palette.GreenLight), new Vector2(i * 13.9f + 0.6f, 0.3f), Vector2.one, Color.white, -75);
+            }
+            for (int i = 0; i < 120; i++)
+            {
+                float x = -38f + i * 0.64f + (float)rnd.NextDouble() * 0.3f;
                 if (Mathf.Abs(x) < 3.5f && rnd.NextDouble() < 0.6) continue;
+                if (rnd.NextDouble() < 0.3) continue;
                 float sc = rnd.NextDouble() < 0.5 ? 0.5f : 0.75f;
-                Make("árvore", worldRoot, Art.Tree, new Vector2(x, 1.0f + (float)rnd.NextDouble() * 0.5f), new Vector2(sc, sc), Color.white, -74);
+                Make("árvore", worldRoot, Art.Tree, new Vector2(x, 0.9f + (float)rnd.NextDouble() * 0.6f), new Vector2(sc, sc), Color.white, -74);
             }
 
-            // Terreno, rio e margem
-            Make("Terreno", worldRoot, Art.PixelBottom, new Vector2(0, -2.7f), new Vector2(16, 3.9f), Palette.GreenDark, -70);
+            // Terreno, estrada, rio e margem
+            Make("Terreno", worldRoot, Art.PixelBottom, new Vector2(0, -2.7f), new Vector2(90, 3.9f), Palette.GreenDark, -72);
             Make("Plataforma", worldRoot, Art.PixelBottom, new Vector2(0, -2.25f), new Vector2(9.6f, 2.75f), Palette.ConcreteShadow, -69);
             Make("Plataforma topo", worldRoot, Art.PixelBottom, new Vector2(0, -2.1f), new Vector2(9.4f, 2.5f), Color.Lerp(Palette.ConcreteDark, Palette.Petrol, 0.25f), -68);
             for (int i = -4; i <= 4; i++)
-                Make("faixa", worldRoot, Art.Pixel, new Vector2(i * 1.05f, -2.0f), new Vector2(0.5f, 0.04f), Palette.Amber.WithAlpha(0.25f), -67);
+                Make("faixa", worldRoot, Art.Pixel, new Vector2(i * 1.05f, -2.0f), new Vector2(0.5f, 1f / Art.WorldPPU), Palette.ConcreteLight.WithAlpha(0.5f), -67);
+            // grama com textura pontilhada
+            var grass = Make("Grama", worldRoot, Art.Checker, new Vector2(0, -0.75f), Vector2.one, Palette.Green.WithAlpha(0.5f), -71);
+            grass.drawMode = SpriteDrawMode.Tiled; grass.size = new Vector2(90, 2.6f);
 
-            Make("Rio", worldRoot, Art.PixelBottom, new Vector2(0, -3.85f), new Vector2(16, 1.25f), Palette.River, -12);
-            Make("Margem", worldRoot, Art.PixelBottom, new Vector2(0, -2.62f), new Vector2(16, 0.1f), Palette.RiverLight.WithAlpha(0.6f), -11);
+            Make("Rio", worldRoot, Art.PixelBottom, new Vector2(0, -3.85f), new Vector2(90, 1.25f), Palette.River, -12);
+            Make("Margem", worldRoot, Art.PixelBottom, new Vector2(0, -2.62f), new Vector2(90, 1f / Art.WorldPPU * 2f), Palette.RiverLight, -11);
             riverGlow = Make("Reflexo do reator", worldRoot, Art.Glow, new Vector2(reactorPos.x, -3.2f), new Vector2(3.2f, 0.7f), Palette.Cyan.WithAlpha(0.12f), -10);
-            for (int i = 0; i < 14; i++)
+            for (int i = 0; i < 90; i++)
             {
-                var r = Make("ondulação", worldRoot, Art.Pixel, new Vector2((float)(rnd.NextDouble() * 12 - 6), -2.85f - (float)rnd.NextDouble() * 0.9f),
+                var r = Make("ondulação", worldRoot, Art.Pixel, new Vector2((float)(rnd.NextDouble() * 76 - 38), -2.85f - (float)rnd.NextDouble() * 0.9f),
                     new Vector2(Mathf.Round((0.3f + (float)rnd.NextDouble() * 0.5f) * Art.WorldPPU) / Art.WorldPPU, 1f / Art.WorldPPU), Palette.RiverLight, -9);
                 ripples.Add(r);
             }
-            Make("Margem próxima", worldRoot, Art.PixelBottom, new Vector2(0, -6.2f), new Vector2(16, 2.4f), Palette.GreenDark, -5);
-            for (int i = 0; i < 8; i++)
+            Make("Margem próxima", worldRoot, Art.PixelBottom, new Vector2(0, -6.2f), new Vector2(90, 2.4f), Palette.GreenDark, -5);
+            for (int i = 0; i < 46; i++)
             {
-                float x = -5.6f + i * 1.6f + (float)rnd.NextDouble() * 0.5f;
+                float x = -38f + i * 1.65f + (float)rnd.NextDouble() * 0.6f;
                 float sc = rnd.NextDouble() < 0.5 ? 1f : 1.25f;
                 Make("árvore próxima", worldRoot, Art.Tree, new Vector2(x, -4.1f), new Vector2(sc, sc), new Color(0.7f, 0.7f, 0.7f, 1f), -4);
             }
@@ -310,17 +359,17 @@ namespace NucleoVivo
         {
             var cityRoot = new GameObject("Cidade").transform;
             cityRoot.SetParent(worldRoot, false);
-            int[] order = { 2, 1, 3, 0, 4 }; // bairros acendem do centro para fora
-            var temp = new List<Window>[5];
-            for (int d = 0; d < 5; d++)
+            const int count = 16;
+            var temp = new List<Window>[count];
+            for (int d = 0; d < count; d++)
             {
                 temp[d] = new List<Window>();
-                float x0 = -5.6f + d * 2.24f;
+                float x0 = -36f + d * 4.5f;
                 float x = x0;
-                while (x < x0 + 2.1f)
+                while (x < x0 + 4.3f)
                 {
                     float w = 0.32f + (float)rnd.NextDouble() * 0.35f;
-                    float h = 0.5f + (float)rnd.NextDouble() * (d == 2 ? 1.5f : 1.0f);
+                    float h = 0.5f + (float)rnd.NextDouble() * (Mathf.Abs(x) < 8f ? 1.5f : 1.0f);
                     float baseY = 2.95f;
                     Color body = Color.Lerp(Palette.PetrolDark, Palette.SkyMid, (float)rnd.NextDouble() * 0.5f);
                     Make("prédio", cityRoot, Art.PixelBottom, new Vector2(x + w * 0.5f, baseY), new Vector2(w, h), body, -92);
@@ -339,7 +388,11 @@ namespace NucleoVivo
                     x += w + 0.04f + (float)rnd.NextDouble() * 0.08f;
                 }
             }
-            foreach (int d in order) districts.Add(temp[d]);
+            // bairros acendem do centro para fora
+            var idx = new List<int>();
+            for (int d = 0; d < count; d++) idx.Add(d);
+            idx.Sort((a, b) => Mathf.Abs(a - 7.5f).CompareTo(Mathf.Abs(b - 7.5f)));
+            foreach (int d in idx) districts.Add(temp[d]);
         }
 
         Structure BuildControlRoom()
@@ -507,7 +560,7 @@ namespace NucleoVivo
         {
             var root = new GameObject("Letreiro").transform;
             root.SetParent(worldRoot, false);
-            root.localPosition = new Vector2(0.15f, -2.42f);
+            root.localPosition = new Vector2(0.15f, -1.98f);
             signBoard = Make("placa", root, Art.Pixel, Vector2.zero, new Vector2(4.6f, 0.62f), Palette.PetrolDark, -20);
             Make("borda", root, Art.Pixel, new Vector2(0, -0.31f), new Vector2(4.6f, 1f / Art.WorldPPU), Palette.Cyan, -19);
             Make("borda topo", root, Art.Pixel, new Vector2(0, 0.31f), new Vector2(4.6f, 1f / Art.WorldPPU), Palette.PetrolLight, -19);
@@ -579,6 +632,7 @@ namespace NucleoVivo
             }
             int grid = cfg.upgrades.FindIndex(u => u.structure == StructureKind.RegionalGrid);
             if (grid >= 0) lit += gm.Economy.VisualTier(grid);
+            lit = 1 + lit * 2 + gm.State.openAreas.Count * 2;
             lit = Mathf.Clamp(lit, 0, districts.Count);
             if (lit == litDistricts) return;
             litDistricts = lit;
@@ -645,10 +699,10 @@ namespace NucleoVivo
                 float k = Mathf.Clamp01(idle + wave * 0.2f * activity + tapFlash);
                 reactorLights[i].color = k > 0.7f ? Palette.Cyan : k > 0.45f ? Palette.CyanSoft : Palette.PetrolLight;
             }
-            reactorHalo.color = Palette.Cyan.WithAlpha(0.06f + 0.05f * activity + 0.3f * tapFlash + 0.25f * installFlash);
+            reactorHalo.color = Palette.Cyan.WithAlpha(0.3f * tapFlash + 0.25f * installFlash); // só aparece no clique
             float squash = 1f - 0.025f * tapFlash;
             reactorTf.localScale = new Vector3(1f + 0.012f * tapFlash, squash, 1);
-            riverGlow.color = Palette.Cyan.WithAlpha(0.08f + 0.06f * activity + 0.2f * tapFlash);
+            riverGlow.color = Palette.Cyan.WithAlpha(0.2f * tapFlash);
             for (int i = 0; i < domeLights.Count; i++)
                 domeLights[i].color = Palette.Amber.WithAlpha(0.55f + 0.45f * Mathf.Sin(time * 2.2f + i));
 
@@ -672,7 +726,7 @@ namespace NucleoVivo
             {
                 var p = r.transform.localPosition;
                 p.x += dt * 0.25f;
-                if (p.x > 6.5f) p.x = -6.5f;
+                if (p.x > 38f) p.x = -38f;
                 r.transform.localPosition = p;
                 r.color = Palette.RiverLight.WithAlpha(0.35f + 0.3f * Mathf.Sin(time * 1.5f + p.x * 2f));
             }
@@ -724,6 +778,10 @@ namespace NucleoVivo
 
             flashOverlay.color = Palette.Cyan.WithAlpha(0.18f * installFlash * installFlash);
             darkOverlay.color = new Color(0.01f, 0.03f, 0.05f, darkness * 0.85f);
+            // as camadas de tela acompanham a câmera pelo mapa
+            Vector3 cp = Cam.transform.position;
+            flashOverlay.transform.position = new Vector3(cp.x, cp.y, 0);
+            darkOverlay.transform.position = new Vector3(cp.x, cp.y, 0);
         }
 
         void AnimateLines(List<SpriteRenderer> lines, StructureKind kind, float time)

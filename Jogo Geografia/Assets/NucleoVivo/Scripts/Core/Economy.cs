@@ -18,8 +18,30 @@ namespace NucleoVivo
         public int Level(int index) => S.GetLevel(config.upgrades[index].id);
 
         // ---------- multiplicadores ----------
-        public double PermanentClickMultiplier => 1.0 + PermanentValue(PermanentKind.ClickBonus);
-        public double PermanentPassiveMultiplier => 1.0 + PermanentValue(PermanentKind.PassiveBonus);
+        // Bônus que sobrevivem ao Renascimento: melhorias permanentes + áreas abertas.
+        public double PermanentClickMultiplier => 1.0 + PermanentValue(PermanentKind.ClickBonus) + AreaValue(AreaBonus.ClickPercent);
+        public double PermanentPassiveMultiplier => 1.0 + PermanentValue(PermanentKind.PassiveBonus) + AreaValue(AreaBonus.PassivePercent);
+
+        // ---------- áreas ----------
+        public bool IsAreaOpen(AreaDef a) => S.openAreas.Contains(a.id);
+        public bool IsAreaAvailable(AreaDef a) => IsAreaOpen(a) || S.campaignProduced >= a.unlockAtProduced;
+        public bool CanOpenArea(AreaDef a) => !IsAreaOpen(a) && IsAreaAvailable(a) && S.energy >= a.cost;
+
+        public bool OpenArea(AreaDef a)
+        {
+            if (!CanOpenArea(a)) return false;
+            S.energy -= a.cost;
+            S.openAreas.Add(a.id);
+            return true;
+        }
+
+        public double AreaValue(AreaBonus bonus)
+        {
+            double v = 0;
+            foreach (var a in config.areas)
+                if (a.bonus == bonus && S.openAreas.Contains(a.id)) v += a.bonusValue;
+            return v;
+        }
 
         public double PermanentValue(PermanentKind kind)
         {
@@ -35,6 +57,7 @@ namespace NucleoVivo
             foreach (var p in config.permanentUpgrades)
                 if (p.kind == PermanentKind.EarlyDiscount && index < p.affectsFirstUpgrades)
                     discount += p.valuePerLevel * S.GetPermanent(p.id);
+            discount += AreaValue(AreaBonus.CostDiscount);
             return Math.Min(0.9, discount);
         }
 
