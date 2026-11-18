@@ -4,12 +4,15 @@ using UnityEngine;
 namespace NucleoVivo
 {
     /// <summary>
-    /// Biblioteca de sprites gerados por código (ilustração própria, sem assets externos).
-    /// Tudo é criado uma vez e mantido em cache.
+    /// Sprites em pixel art gerados por código, sem antisserrilhado, com contorno de 1 pixel
+    /// e sombreamento em faixas. Escala do mundo: 24 pixels por unidade.
     /// </summary>
     public static class Art
     {
+        public const float WorldPPU = 24f;
+
         static readonly Dictionary<string, Sprite> cache = new Dictionary<string, Sprite>();
+        static readonly Color Ink = new Color32(0x08, 0x10, 0x14, 255);
 
         static Sprite Get(string key, System.Func<Sprite> build)
         {
@@ -23,343 +26,238 @@ namespace NucleoVivo
         static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
         static readonly Vector2 BottomCenter = new Vector2(0.5f, 0f);
 
+        /// <summary>Sprite em que cada texel ocupa 1/24 de unidade.</summary>
+        static Sprite WorldSprite(Painter p, Vector2 pivot, string name) => p.ToSprite(p.Height / WorldPPU, pivot, name);
+
+        /// <summary>Três tons em faixas (luz da esquerda), como num sprite feito à mão.</summary>
+        static Color Band(float x, float left, float right, Color light, Color mid, Color dark)
+        {
+            float t = Mathf.InverseLerp(left, right, x);
+            return t < 0.3f ? light : t < 0.78f ? mid : dark;
+        }
+
         // ---------- primitivas ----------
         public static Sprite Pixel => Get("pixel", () =>
         {
-            var p = new Painter(4, 4); p.Fill(Color.white);
+            var p = new Painter(1, 1, true); p.Fill(Color.white);
             return p.ToSprite(1f, Center, "pixel");
         });
 
         public static Sprite PixelBottom => Get("pixelBottom", () =>
         {
-            var p = new Painter(4, 4); p.Fill(Color.white);
+            var p = new Painter(1, 1, true); p.Fill(Color.white);
             return p.ToSprite(1f, BottomCenter, "pixelBottom");
         });
 
         public static Sprite Circle => Get("circle", () =>
         {
-            var p = new Painter(128, 128); p.Circle(0.5f, 0.5f, 0.48f, Color.white);
+            var p = new Painter(16, 16, true); p.Circle(0.5f, 0.5f, 0.47f, Color.white);
             return p.ToSprite(1f, Center, "circle");
         });
 
+        /// <summary>Halo pontilhado (substitui brilhos difusos).</summary>
         public static Sprite Glow => Get("glow", () =>
         {
-            var p = new Painter(128, 128); p.Glow(0.5f, 0.5f, 0.5f, Color.white, 2.2f);
+            var p = new Painter(128, 128, true); p.Glow(0.5f, 0.5f, 0.5f, Color.white, 1.6f);
             return p.ToSprite(1f, Center, "glow");
         });
 
-        public static Sprite SkyGradient => Get("sky", BuildSky);
-
-        static Sprite BuildSky()
+        public static Sprite SkyGradient => Get("sky", () =>
         {
-            var p = new Painter(8, 256);
-            p.Shape(_ => -1f, q =>
+            var p = new Painter(320, 560, true);
+            Color[] bands = { Palette.SkyHorizon, Color.Lerp(Palette.SkyHorizon, Palette.SkyMid, 0.5f), Palette.SkyMid, Color.Lerp(Palette.SkyMid, Palette.SkyTop, 0.5f), Palette.SkyTop };
+            for (int y = 0; y < p.Height; y++)
             {
-                float t = q.y; // 0 = horizonte
-                Color c = t < 0.35f ? Color.Lerp(Palette.SkyHorizon, Palette.SkyMid, t / 0.35f)
-                                    : Color.Lerp(Palette.SkyMid, Palette.SkyTop, (t - 0.35f) / 0.65f);
-                return c;
-            }, new Rect(0, 0, 1, 1));
-            return p.ToSprite(1f, BottomCenter, "sky");
-        }
-
-        /// <summary>Retângulo arredondado fatiado (9-slice) para a interface.</summary>
-        public static Sprite RoundRect => Get("roundRect", () =>
-        {
-            var p = new Painter(64, 64);
-            p.Box(0.5f, 0.5f, 0.5f, 0.5f, 0.32f, Color.white);
-            return p.ToSprite(1f, Center, "roundRect", new Vector4(24, 24, 24, 24));
+                float t = Mathf.Clamp01((y / (float)p.Height - 0.05f) / 0.6f) * (bands.Length - 1);
+                int i = Mathf.Min(bands.Length - 2, (int)t);
+                float f = t - i;
+                for (int x = 0; x < p.Width; x++)
+                    p.SetPixel(x, y, f > Painter.Bayer(x, y) ? bands[i + 1] : bands[i]);
+            }
+            return WorldSprite(p, BottomCenter, "sky");
         });
 
-        public static Sprite RoundRectOutline => Get("roundRectOutline", () =>
+        // ---------- interface ----------
+        static readonly string[] FrameMap =
         {
-            var p = new Painter(64, 64);
-            Vector2 half = new Vector2(0.5f, 0.5f);
-            p.Shape(q => Mathf.Abs(Painter.SdBox(q - Center, half, 0.32f)) - 0.03f, Color.white, new Rect(0, 0, 1, 1));
-            return p.ToSprite(1f, Center, "roundRectOutline", new Vector4(24, 24, 24, 24));
+            ".kkkkkkk.",
+            "kwwwwwwwk",
+            "kwfffffsk",
+            "kwfffffsk",
+            "kwfffffsk",
+            "kwfffffsk",
+            "kwfffffsk",
+            "ksssssssk",
+            ".kkkkkkk.",
+        };
+
+        static Sprite Frame(string[] map, string name, float w, float f, float sh)
+        {
+            int n = map.Length;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, name = name };
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    char c = map[y][x];
+                    Color col = c == 'k' ? new Color(0.03f, 0.06f, 0.08f, 1f) : c == 'w' ? new Color(w, w, w, 1) : c == 'f' ? new Color(f, f, f, 1) : c == 's' ? new Color(sh, sh, sh, 1) : new Color(0, 0, 0, 0);
+                    tex.SetPixel(x, n - 1 - y, col);
+                }
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, n, n), Center, 100f, 0, SpriteMeshType.FullRect, new Vector4(3, 3, 3, 3));
+        }
+
+        /// <summary>Moldura de pixel com relevo (9 fatias). Usar Image.pixelsPerUnitMultiplier = 1/3.</summary>
+        public static Sprite RoundRect => Get("frame", () => Frame(FrameMap, "frame", 1f, 0.82f, 0.6f));
+
+        /// <summary>Moldura apenas com borda clara (destaques).</summary>
+        public static Sprite RoundRectOutline => Get("frameOutline", () =>
+        {
+            string[] m =
+            {
+                ".wwwwwww.",
+                "wwwwwwwww",
+                "ww.....ww",
+                "ww.....ww",
+                "ww.....ww",
+                "ww.....ww",
+                "ww.....ww",
+                "wwwwwwwww",
+                ".wwwwwww.",
+            };
+            return Frame(m, "frameOutline", 1f, 1f, 1f);
         });
 
         // ---------- cenário ----------
-        public static Sprite Hills(int seed) => Get("hills" + seed, () =>
+        public static Sprite Hills(int seed, Color body, Color rim) => Get("hills" + seed + body, () =>
         {
-            var p = new Painter(512, 128);
+            var p = new Painter(336, 60, true);
             var pts = new List<Vector2> { V(0, 0) };
             var rnd = new System.Random(seed);
             float ph1 = (float)rnd.NextDouble() * 6f, ph2 = (float)rnd.NextDouble() * 6f;
-            for (int i = 0; i <= 48; i++)
+            for (int i = 0; i <= 42; i++)
             {
-                float x = i / 48f;
-                float y = 0.62f + 0.18f * Mathf.Sin(x * 6.2f + ph1) + 0.1f * Mathf.Sin(x * 13f + ph2);
-                pts.Add(V(x, Mathf.Clamp(y, 0.2f, 0.98f)));
+                float x = i / 42f;
+                float y = 0.6f + 0.2f * Mathf.Sin(x * 6.2f + ph1) + 0.1f * Mathf.Sin(x * 13f + ph2);
+                pts.Add(V(x, Mathf.Clamp(y, 0.2f, 0.97f)));
             }
             pts.Add(V(1, 0));
-            p.Poly(Color.white, pts.ToArray());
-            return p.ToSprite(1f, BottomCenter, "hills" + seed);
+            p.Poly(body, pts.ToArray());
+            // crista iluminada com pontilhado
+            for (int x = 0; x < p.Width; x++)
+            {
+                int top = -1;
+                for (int y = p.Height - 1; y >= 0; y--) if (p.GetPixel(x, y).a > 0.5f) { top = y; break; }
+                for (int k = 0; k < 4 && top - k >= 0; k++)
+                    if (k == 0 || (1f - k / 4f) > Painter.Bayer(x, top - k)) p.SetPixel(x, top - k, rim);
+            }
+            return WorldSprite(p, BottomCenter, "hills" + seed);
         });
 
         public static Sprite Tree => Get("tree", () =>
         {
-            var p = new Painter(64, 96);
-            p.Rect01(0.44f, 0.0f, 0.56f, 0.3f, Palette.ConcreteShadow);
+            var p = new Painter(14, 20, true);
+            p.Rect01(0.43f, 0.0f, 0.57f, 0.32f, Palette.ConcreteShadow);
             p.Circle(0.5f, 0.42f, 0.2f, Palette.GreenDark);
-            p.Circle(0.36f, 0.5f, 0.16f, Palette.GreenDark);
-            p.Circle(0.64f, 0.52f, 0.15f, Palette.Green);
-            p.Circle(0.5f, 0.66f, 0.17f, Palette.Green);
-            p.Circle(0.44f, 0.72f, 0.09f, Palette.GreenLight);
-            return p.ToSprite(1f, BottomCenter, "tree");
+            p.Circle(0.33f, 0.5f, 0.17f, Palette.GreenDark);
+            p.Circle(0.66f, 0.52f, 0.16f, Palette.Green);
+            p.Circle(0.5f, 0.68f, 0.18f, Palette.Green);
+            p.Circle(0.44f, 0.74f, 0.08f, Palette.GreenLight);
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "tree");
         });
 
         public static Sprite Reactor => Get("reactor", () =>
         {
-            var p = new Painter(256, 256);
-            // base
-            p.Rect01(0.1f, 0.0f, 0.9f, 0.07f, Palette.ConcreteShadow, 0.01f);
-            // corpo cilíndrico com sombreamento lateral
-            p.Box(0.5f, 0.31f, 0.33f, 0.25f, 0.0f, q => Shade(q.x, 0.17f, 0.83f, Palette.ConcreteLight, Palette.ConcreteDark));
-            // cúpula
+            var p = new Painter(72, 72, true);
+            Color L = Palette.ConcreteLight, M = Palette.Concrete, D = Palette.ConcreteDark;
+            p.Rect01(0.1f, 0.0f, 0.9f, 0.07f, Palette.ConcreteShadow);
+            p.Box(0.5f, 0.31f, 0.33f, 0.25f, 0f, q => Band(q.x, 0.17f, 0.83f, L, M, D));
             Vector2 c = V(0.5f, 0.56f);
             p.Shape(q => Mathf.Max((q - c).magnitude - 0.33f, c.y - q.y), q =>
             {
-                Color baseC = Shade(q.x, 0.17f, 0.83f, Palette.ConcreteLight, Palette.ConcreteDark);
-                float top = Mathf.Clamp01((q.y - 0.56f) / 0.33f);
-                return Color.Lerp(baseC, Color.white * 0.92f + Color.black * 0.08f, top * 0.25f);
+                Color b = Band(q.x, 0.17f, 0.83f, L, M, D);
+                return q.y > 0.82f && q.x < 0.62f ? Color.white * 0.95f + Color.black * 0.05f : b;
             }, Rect.MinMaxRect(0.15f, 0.55f, 0.85f, 0.92f));
-            // faixa da geração (petróleo)
             p.Rect01(0.17f, 0.40f, 0.83f, 0.47f, Palette.PetrolDark);
-            // emendas verticais
             for (int i = 1; i < 6; i++)
             {
                 float x = 0.17f + i * 0.11f;
-                p.Line(x, 0.07f, x, 0.40f, 0.004f, Palette.ConcreteDark.WithAlpha(0.5f));
+                p.Rect01(x, 0.07f, x + 1f / 72f, 0.40f, D);
             }
-            // escotilha no topo
-            p.Rect01(0.46f, 0.88f, 0.54f, 0.91f, Palette.ConcreteDark, 0.01f);
-            // porta
-            p.Rect01(0.44f, 0.07f, 0.56f, 0.2f, Palette.PetrolDark, 0.015f);
-            p.Rect01(0.455f, 0.08f, 0.545f, 0.19f, Palette.Petrol, 0.01f);
-            return p.ToSprite(3f, BottomCenter, "reactor");
+            p.Rect01(0.46f, 0.88f, 0.54f, 0.92f, D);
+            p.Rect01(0.43f, 0.07f, 0.57f, 0.21f, Palette.PetrolDark);
+            p.Rect01(0.46f, 0.08f, 0.54f, 0.19f, Palette.Petrol);
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "reactor");
         });
 
         public static Sprite CoolingTower => Get("coolingTower", () =>
         {
-            var p = new Painter(192, 256);
+            var p = new Painter(48, 64, true);
             var pts = new List<Vector2>();
-            int n = 24;
+            int n = 16;
             for (int i = 0; i <= n; i++) { float y = 0.02f + 0.93f * i / n; pts.Add(V(0.5f - TowerHalf(y), y)); }
             for (int i = n; i >= 0; i--) { float y = 0.02f + 0.93f * i / n; pts.Add(V(0.5f + TowerHalf(y), y)); }
-            float aspect = 192f / 256f;
+            float aspect = 48f / 64f;
             p.Poly(q =>
             {
                 float nx = q.x / aspect;
                 float hw = TowerHalf(q.y);
-                Color c = Shade(nx, 0.5f - hw, 0.5f + hw, Palette.ConcreteLight, Palette.ConcreteDark);
-                if (q.y > 0.84f && q.y < 0.88f) c = Color.Lerp(c, Palette.PetrolDark, 0.6f);
+                Color c = Band(nx, 0.5f - hw, 0.5f + hw, Palette.ConcreteLight, Palette.Concrete, Palette.ConcreteDark);
+                if (q.y > 0.84f && q.y < 0.89f) c = Palette.PetrolDark;
                 return c;
             }, pts.ToArray());
-            // pilares da base
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 6; i++)
             {
-                float x = 0.12f + i * 0.127f;
-                p.Rect01(x - 0.012f, 0.0f, x + 0.012f, 0.05f, Palette.ConcreteShadow);
+                float x = 0.14f + i * 0.145f;
+                p.Rect01(x, 0.0f, x + 0.04f, 0.05f, Palette.ConcreteShadow);
             }
-            return p.ToSprite(2.6f, BottomCenter, "coolingTower");
+            p.Outline(Ink);
+            return WorldSprite(p, BottomCenter, "coolingTower");
         });
 
         static float TowerHalf(float y) => 0.2f + 0.5f * (y - 0.68f) * (y - 0.68f);
 
         public static Sprite Rotor => Get("rotor", () =>
         {
-            var p = new Painter(128, 128);
-            for (int i = 0; i < 6; i++)
+            var p = new Painter(16, 16, true);
+            for (int i = 0; i < 4; i++)
             {
-                float a = i * Mathf.PI / 3f;
-                p.Line(0.5f, 0.5f, 0.5f + Mathf.Cos(a) * 0.42f, 0.5f + Mathf.Sin(a) * 0.42f, 0.11f, Color.white);
+                float a = i * Mathf.PI / 2f + 0.4f;
+                p.Line(0.5f, 0.5f, 0.5f + Mathf.Cos(a) * 0.42f, 0.5f + Mathf.Sin(a) * 0.42f, 0.16f, Color.white);
             }
-            p.Circle(0.5f, 0.5f, 0.12f, Color.white);
+            p.Circle(0.5f, 0.5f, 0.13f, Color.white);
             return p.ToSprite(1f, Center, "rotor");
         });
 
         public static Sprite Pylon => Get("pylon", () =>
         {
-            var p = new Painter(96, 256);
+            var p = new Painter(22, 58, true);
             Color c = Color.white;
-            float t = 0.012f;
-            // pernas (coordenadas x normalizadas na largura)
-            p.Line(0.12f, 0f, 0.42f, 0.95f, t, c);
-            p.Line(0.88f, 0f, 0.58f, 0.95f, t, c);
-            // travessas
+            float t = 1.3f / 58f;
+            p.Line(0.1f, 0f, 0.4f, 0.95f, t, c);
+            p.Line(0.9f, 0f, 0.6f, 0.95f, t, c);
             p.Line(0.0f, 0.78f, 1.0f, 0.78f, t, c);
             p.Line(0.12f, 0.62f, 0.88f, 0.62f, t, c);
-            // treliça
             for (int i = 0; i < 4; i++)
             {
                 float y0 = i * 0.2f, y1 = y0 + 0.2f;
-                float l0 = Mathf.Lerp(0.12f, 0.42f, y0 / 0.95f), r0 = Mathf.Lerp(0.88f, 0.58f, y0 / 0.95f);
-                float l1 = Mathf.Lerp(0.12f, 0.42f, y1 / 0.95f), r1 = Mathf.Lerp(0.88f, 0.58f, y1 / 0.95f);
-                p.Line(l0, y0, r1, y1, t * 0.7f, c);
-                p.Line(r0, y0, l1, y1, t * 0.7f, c);
+                float l0 = Mathf.Lerp(0.1f, 0.4f, y0 / 0.95f), r0 = Mathf.Lerp(0.9f, 0.6f, y0 / 0.95f);
+                float l1 = Mathf.Lerp(0.1f, 0.4f, y1 / 0.95f), r1 = Mathf.Lerp(0.9f, 0.6f, y1 / 0.95f);
+                p.Line(l0, y0, r1, y1, t, c);
+                p.Line(r0, y0, l1, y1, t, c);
             }
-            p.Circle(0.5f, 0.97f, 0.015f, c);
-            return p.ToSprite(2.4f, BottomCenter, "pylon");
+            return WorldSprite(p, BottomCenter, "pylon");
         });
 
-        static Color Shade(float x, float left, float right, Color light, Color dark)
+        /// <summary>Texto em pixel no mundo (1 pixel da fonte = 1 pixel do cenário).</summary>
+        public static Sprite WorldText(string text, Color color)
         {
-            float t = Mathf.InverseLerp(left, right, x);
-            // luz vinda da esquerda; leve reflexo na borda direita
-            float k = Mathf.SmoothStep(0, 1, t);
-            Color c = Color.Lerp(light, dark, k);
-            if (t > 0.9f) c = Color.Lerp(c, light, (t - 0.9f) * 1.5f);
-            return c;
+            var tex = PixelFont.Render(text, color, Ink);
+            return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Center, WorldPPU, 0, SpriteMeshType.FullRect);
         }
 
         // ---------- ícones ----------
-        public static Sprite Icon(IconKind kind) => Get("icon_" + kind, () => BuildIcon(kind));
-
-        static Sprite BuildIcon(IconKind kind)
-        {
-            var p = new Painter(128, 128);
-            Color cy = Palette.Cyan, am = Palette.Amber, cl = Palette.ConcreteLight, cd = Palette.ConcreteDark, pt = Palette.PetrolLight, ptd = Palette.Petrol, w = Palette.UiText;
-            switch (kind)
-            {
-                case IconKind.Energy:
-                    p.Glow(0.5f, 0.5f, 0.45f, am.WithAlpha(0.35f));
-                    p.Poly(am, V(0.56f, 0.92f), V(0.26f, 0.46f), V(0.47f, 0.46f), V(0.40f, 0.08f), V(0.74f, 0.58f), V(0.52f, 0.58f));
-                    break;
-                case IconKind.ControlPanel:
-                    p.Poly(cl, V(0.12f, 0.2f), V(0.88f, 0.2f), V(0.8f, 0.62f), V(0.2f, 0.62f));
-                    p.Rect01(0.12f, 0.12f, 0.88f, 0.2f, cd);
-                    p.Rect01(0.26f, 0.66f, 0.74f, 0.9f, ptd, 0.03f);
-                    p.Rect01(0.3f, 0.7f, 0.7f, 0.86f, cy, 0.02f);
-                    p.Circle(0.32f, 0.4f, 0.06f, am); p.Circle(0.5f, 0.4f, 0.06f, cy); p.Circle(0.68f, 0.4f, 0.06f, am);
-                    break;
-                case IconKind.Turbine:
-                    p.Circle(0.5f, 0.5f, 0.42f, cd);
-                    p.Circle(0.5f, 0.5f, 0.36f, ptd);
-                    for (int i = 0; i < 5; i++)
-                    {
-                        float a = i * Mathf.PI * 2f / 5f + 0.3f;
-                        p.Line(0.5f, 0.5f, 0.5f + Mathf.Cos(a) * 0.3f, 0.5f + Mathf.Sin(a) * 0.3f, 0.09f, cy);
-                    }
-                    p.Circle(0.5f, 0.5f, 0.09f, cl);
-                    break;
-                case IconKind.Substation:
-                    p.Rect01(0.12f, 0.12f, 0.42f, 0.5f, cl, 0.03f);
-                    p.Rect01(0.58f, 0.12f, 0.88f, 0.5f, cl, 0.03f);
-                    p.Rect01(0.18f, 0.5f, 0.36f, 0.6f, cd); p.Rect01(0.64f, 0.5f, 0.82f, 0.6f, cd);
-                    p.Line(0.27f, 0.6f, 0.27f, 0.85f, 0.03f, cd); p.Line(0.73f, 0.6f, 0.73f, 0.85f, 0.03f, cd);
-                    p.Line(0.1f, 0.85f, 0.9f, 0.85f, 0.035f, cy);
-                    p.Poly(am, V(0.52f, 0.44f), V(0.45f, 0.3f), V(0.52f, 0.3f), V(0.48f, 0.18f), V(0.57f, 0.34f), V(0.5f, 0.34f));
-                    break;
-                case IconKind.Automation:
-                    p.Rect01(0.1f, 0.3f, 0.9f, 0.85f, cd, 0.05f);
-                    p.Rect01(0.15f, 0.35f, 0.85f, 0.8f, ptd, 0.03f);
-                    p.Line(0.2f, 0.45f, 0.38f, 0.6f, 0.035f, cy); p.Line(0.38f, 0.6f, 0.52f, 0.5f, 0.035f, cy);
-                    p.Line(0.52f, 0.5f, 0.78f, 0.72f, 0.035f, cy);
-                    p.Rect01(0.42f, 0.15f, 0.58f, 0.3f, cd); p.Rect01(0.28f, 0.1f, 0.72f, 0.16f, cl, 0.02f);
-                    break;
-                case IconKind.CoolingTower:
-                    p.Poly(q => Shade(q.x, 0.2f, 0.8f, cl, cd), V(0.18f, 0.08f), V(0.82f, 0.08f), V(0.68f, 0.45f), V(0.7f, 0.68f), V(0.3f, 0.68f), V(0.32f, 0.45f));
-                    p.Circle(0.45f, 0.78f, 0.1f, w.WithAlpha(0.85f)); p.Circle(0.58f, 0.84f, 0.12f, w.WithAlpha(0.7f)); p.Circle(0.4f, 0.9f, 0.07f, w.WithAlpha(0.55f));
-                    break;
-                case IconKind.Reactor:
-                    p.Rect01(0.2f, 0.1f, 0.8f, 0.5f, cl);
-                    p.Shape(q => Mathf.Max((q - V(0.5f, 0.5f)).magnitude - 0.3f, 0.5f - q.y), cl, Rect.MinMaxRect(0.2f, 0.5f, 0.8f, 0.8f));
-                    p.Rect01(0.2f, 0.36f, 0.8f, 0.44f, cy);
-                    p.Rect01(0.44f, 0.1f, 0.56f, 0.24f, ptd, 0.02f);
-                    break;
-                case IconKind.Grid:
-                    p.Line(0.1f, 0.8f, 0.9f, 0.7f, 0.025f, cy);
-                    p.Rect01(0.1f, 0.12f, 0.3f, 0.45f, cd); p.Rect01(0.34f, 0.12f, 0.56f, 0.6f, cl); p.Rect01(0.6f, 0.12f, 0.88f, 0.5f, cd);
-                    for (int r = 0; r < 3; r++) { p.Rect01(0.39f, 0.2f + r * 0.12f, 0.44f, 0.26f + r * 0.12f, am); p.Rect01(0.47f, 0.2f + r * 0.12f, 0.52f, 0.26f + r * 0.12f, am); }
-                    p.Rect01(0.15f, 0.22f, 0.2f, 0.28f, am); p.Rect01(0.66f, 0.22f, 0.72f, 0.28f, am); p.Rect01(0.76f, 0.34f, 0.82f, 0.4f, am);
-                    break;
-                case IconKind.Heat:
-                    p.Glow(0.42f, 0.56f, 0.4f, am.WithAlpha(0.4f));
-                    p.Circle(0.42f, 0.56f, 0.18f, am);
-                    for (int i = 0; i < 8; i++) { float a = i * Mathf.PI / 4f; p.Line(0.42f + Mathf.Cos(a) * 0.25f, 0.56f + Mathf.Sin(a) * 0.25f, 0.42f + Mathf.Cos(a) * 0.34f, 0.56f + Mathf.Sin(a) * 0.34f, 0.04f, am); }
-                    p.Rect01(0.7f, 0.22f, 0.8f, 0.7f, cl, 0.05f); p.Circle(0.75f, 0.2f, 0.08f, Palette.UiNegative); p.Rect01(0.73f, 0.2f, 0.77f, 0.55f, Palette.UiNegative);
-                    break;
-                case IconKind.University:
-                    p.Poly(cl, V(0.1f, 0.68f), V(0.5f, 0.9f), V(0.9f, 0.68f));
-                    p.Rect01(0.12f, 0.12f, 0.88f, 0.2f, cl);
-                    for (int i = 0; i < 4; i++) { float x = 0.22f + i * 0.19f; p.Rect01(x - 0.04f, 0.2f, x + 0.04f, 0.64f, cd); }
-                    p.Circle(0.5f, 0.77f, 0.05f, cy);
-                    break;
-                case IconKind.Wrench:
-                    p.Line(0.28f, 0.28f, 0.66f, 0.66f, 0.12f, cl);
-                    p.Circle(0.7f, 0.7f, 0.17f, cl);
-                    p.Shape(q => (q - V(0.78f, 0.78f)).magnitude - 0.08f, Palette.UiCard, Rect.MinMaxRect(0.68f, 0.68f, 0.88f, 0.88f));
-                    p.Circle(0.25f, 0.25f, 0.09f, cl);
-                    p.Glow(0.3f, 0.75f, 0.2f, Palette.UiNegative.WithAlpha(0.8f));
-                    p.Line(0.3f, 0.66f, 0.3f, 0.8f, 0.035f, Palette.UiNegative);
-                    break;
-                case IconKind.Protest:
-                    p.Line(0.5f, 0.08f, 0.5f, 0.55f, 0.05f, cd);
-                    p.Rect01(0.16f, 0.5f, 0.84f, 0.88f, cl, 0.04f);
-                    p.Poly(cy, V(0.3f, 0.69f), V(0.5f, 0.8f), V(0.62f, 0.69f), V(0.5f, 0.58f));
-                    p.Poly(cy, V(0.62f, 0.69f), V(0.72f, 0.77f), V(0.72f, 0.61f));
-                    p.Circle(0.4f, 0.71f, 0.02f, Palette.UiCard);
-                    break;
-                case IconKind.Hearing:
-                    p.Circle(0.3f, 0.55f, 0.1f, cl); p.Box(0.3f, 0.25f, 0.15f, 0.15f, 0.1f, cl);
-                    p.Circle(0.66f, 0.5f, 0.09f, cd); p.Box(0.66f, 0.22f, 0.14f, 0.13f, 0.09f, cd);
-                    p.Rect01(0.48f, 0.7f, 0.92f, 0.92f, cy, 0.06f);
-                    p.Poly(cy, V(0.55f, 0.72f), V(0.5f, 0.62f), V(0.64f, 0.72f));
-                    break;
-                case IconKind.Press:
-                    p.Rect01(0.14f, 0.12f, 0.86f, 0.86f, cl, 0.04f);
-                    p.Rect01(0.22f, 0.68f, 0.78f, 0.78f, Palette.UiCard);
-                    p.Rect01(0.22f, 0.36f, 0.48f, 0.6f, cy, 0.02f);
-                    for (int i = 0; i < 4; i++) p.Rect01(0.54f, 0.56f - i * 0.07f, 0.78f, 0.59f - i * 0.07f, cd);
-                    p.Rect01(0.22f, 0.22f, 0.78f, 0.25f, cd); p.Rect01(0.22f, 0.29f, 0.7f, 0.32f, cd);
-                    break;
-                case IconKind.Nucleo:
-                    p.Glow(0.5f, 0.5f, 0.48f, cy.WithAlpha(0.45f));
-                    p.Ring(0.5f, 0.5f, 0.34f, 0.035f, cy.WithAlpha(0.9f));
-                    p.Ring(0.5f, 0.5f, 0.22f, 0.03f, am.WithAlpha(0.9f));
-                    p.Circle(0.5f, 0.5f, 0.11f, w);
-                    p.Circle(0.84f, 0.5f, 0.05f, cy); p.Circle(0.33f, 0.79f, 0.05f, cy); p.Circle(0.66f, 0.31f, 0.045f, am);
-                    break;
-                case IconKind.Tap:
-                    p.Ring(0.5f, 0.56f, 0.3f, 0.03f, cy.WithAlpha(0.5f));
-                    p.Ring(0.5f, 0.56f, 0.2f, 0.035f, cy.WithAlpha(0.8f));
-                    p.Circle(0.5f, 0.56f, 0.1f, cy);
-                    p.Poly(am, V(0.52f, 0.36f), V(0.4f, 0.12f), V(0.5f, 0.12f), V(0.46f, 0.02f), V(0.62f, 0.22f), V(0.53f, 0.22f));
-                    break;
-                case IconKind.Passive:
-                    p.Arc(0.5f, 0.5f, 0.32f, 0.07f, 20f, 300f, cy);
-                    p.Poly(cy, V(0.78f, 0.72f), V(0.92f, 0.52f), V(0.66f, 0.5f));
-                    p.Poly(am, V(0.54f, 0.72f), V(0.38f, 0.46f), V(0.5f, 0.46f), V(0.45f, 0.26f), V(0.63f, 0.54f), V(0.52f, 0.54f));
-                    break;
-                case IconKind.Discount:
-                    p.Poly(cl, V(0.12f, 0.5f), V(0.42f, 0.86f), V(0.86f, 0.86f), V(0.86f, 0.14f), V(0.42f, 0.14f));
-                    p.Circle(0.3f, 0.5f, 0.05f, Palette.UiCard);
-                    p.Line(0.5f, 0.3f, 0.74f, 0.7f, 0.04f, Palette.Petrol);
-                    p.Ring(0.53f, 0.64f, 0.05f, 0.03f, Palette.Petrol); p.Ring(0.71f, 0.36f, 0.05f, 0.03f, Palette.Petrol);
-                    break;
-                case IconKind.Sound:
-                    p.Poly(cl, V(0.14f, 0.38f), V(0.3f, 0.38f), V(0.5f, 0.2f), V(0.5f, 0.8f), V(0.3f, 0.62f), V(0.14f, 0.62f));
-                    p.Arc(0.5f, 0.5f, 0.16f, 0.05f, -50f, 50f, cy);
-                    p.Arc(0.5f, 0.5f, 0.3f, 0.05f, -50f, 50f, cy);
-                    break;
-                case IconKind.Reputation:
-                    p.Poly(pt, V(0.5f, 0.92f), V(0.84f, 0.78f), V(0.8f, 0.4f), V(0.5f, 0.08f), V(0.2f, 0.4f), V(0.16f, 0.78f));
-                    p.Line(0.34f, 0.5f, 0.46f, 0.38f, 0.07f, cy); p.Line(0.46f, 0.38f, 0.68f, 0.66f, 0.07f, cy);
-                    break;
-                case IconKind.Settings:
-                    for (int i = 0; i < 8; i++) { float a = i * Mathf.PI / 4f; p.Line(0.5f, 0.5f, 0.5f + Mathf.Cos(a) * 0.4f, 0.5f + Mathf.Sin(a) * 0.4f, 0.14f, cl); }
-                    p.Circle(0.5f, 0.5f, 0.3f, cl);
-                    p.Circle(0.5f, 0.5f, 0.13f, Palette.UiCard);
-                    break;
-                case IconKind.Lock:
-                    p.Arc(0.5f, 0.56f, 0.18f, 0.07f, 0f, 180f, cd);
-                    p.Line(0.32f, 0.5f, 0.32f, 0.56f, 0.07f, cd); p.Line(0.68f, 0.5f, 0.68f, 0.56f, 0.07f, cd);
-                    p.Rect01(0.22f, 0.12f, 0.78f, 0.52f, cl, 0.05f);
-                    p.Circle(0.5f, 0.34f, 0.06f, Palette.UiCard);
-                    break;
-            }
-            return p.ToSprite(1f, Center, "icon_" + kind);
-        }
+        public static Sprite Icon(IconKind kind) => PixelIcons.Get(kind);
     }
 }

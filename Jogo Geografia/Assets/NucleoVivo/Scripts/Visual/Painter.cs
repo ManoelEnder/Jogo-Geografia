@@ -14,8 +14,12 @@ namespace NucleoVivo
         readonly Color[] px;
         readonly float aspect;
 
-        public Painter(int width, int height)
+        /// <summary>Modo pixel art: sem antisserrilhado, bordas duras.</summary>
+        public bool Hard;
+
+        public Painter(int width, int height, bool hard = false)
         {
+            Hard = hard;
             Width = width; Height = height;
             px = new Color[width * height];
             aspect = (float)width / height;
@@ -50,7 +54,7 @@ namespace NucleoVivo
                 {
                     Vector2 p = P(x, y);
                     float d = sdf(p);
-                    float cov = Mathf.Clamp01(0.5f - d / pxSize);
+                    float cov = Hard ? (d <= 0f ? 1f : 0f) : Mathf.Clamp01(0.5f - d / pxSize);
                     if (cov > 0) Blend(y * Width + x, color(p), cov);
                 }
         }
@@ -156,7 +160,9 @@ namespace NucleoVivo
                 {
                     float d = (P(x, y) - ctr).magnitude / r;
                     if (d >= 1f) continue;
-                    Blend(y * Width + x, c, Mathf.Pow(1f - d, power));
+                    float k = Mathf.Pow(1f - d, power);
+                    if (Hard) { if (k > Bayer(x, y)) Blend(y * Width + x, c, 1f); }
+                    else Blend(y * Width + x, c, k);
                 }
         }
 
@@ -167,6 +173,28 @@ namespace NucleoVivo
                 Color c = Color.Lerp(bottom, top, (y + 0.5f) / Height);
                 for (int x = 0; x < Width; x++) px[y * Width + x] = c;
             }
+        }
+
+        static readonly float[] Bayer4 = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+
+        /// <summary>Limiar de pontilhado ordenado 4x4 (0..1).</summary>
+        public static float Bayer(int x, int y) => (Bayer4[(y & 3) * 4 + (x & 3)] + 0.5f) / 16f;
+
+        public Color GetPixel(int x, int y) => px[y * Width + x];
+        public void SetPixel(int x, int y, Color c) { if (x >= 0 && y >= 0 && x < Width && y < Height) px[y * Width + x] = c; }
+
+        /// <summary>Contorno de 1 pixel ao redor de tudo que é opaco (estilo pixel art).</summary>
+        public void Outline(Color c)
+        {
+            var copy = (Color[])px.Clone();
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                {
+                    if (copy[y * Width + x].a > 0.5f) continue;
+                    bool near = (x > 0 && copy[y * Width + x - 1].a > 0.5f) || (x < Width - 1 && copy[y * Width + x + 1].a > 0.5f)
+                             || (y > 0 && copy[(y - 1) * Width + x].a > 0.5f) || (y < Height - 1 && copy[(y + 1) * Width + x].a > 0.5f);
+                    if (near) px[y * Width + x] = c;
+                }
         }
 
         public void Fill(Color c)
@@ -220,7 +248,7 @@ namespace NucleoVivo
             }
             tex.SetPixels(outPx);
             tex.wrapMode = TextureWrapMode.Clamp;
-            tex.filterMode = FilterMode.Bilinear;
+            tex.filterMode = Hard ? FilterMode.Point : FilterMode.Bilinear;
             tex.Apply(mipmaps, true);
             return tex;
         }

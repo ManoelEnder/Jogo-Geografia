@@ -27,8 +27,8 @@ namespace NucleoVivo
         {
             public Button button;
             public Image bg;
-            public Text label;
-            public Text sub;
+            public PixelText label;
+            public PixelText sub;
             public RectTransform rt;
             public LayoutElement layout;
         }
@@ -62,7 +62,7 @@ namespace NucleoVivo
             if (img == null) img = rt.gameObject.AddComponent<Image>();
             img.sprite = sprite ?? Art.RoundRect;
             img.type = img.sprite == Art.RoundRect || img.sprite == Art.RoundRectOutline ? Image.Type.Sliced : Image.Type.Simple;
-            img.pixelsPerUnitMultiplier = 1.4f;
+            img.pixelsPerUnitMultiplier = 1f / PixelText.UiPixel; // 1 texel da moldura = 1 pixel da interface
             img.color = color;
             img.raycastTarget = raycast;
             return img;
@@ -76,37 +76,32 @@ namespace NucleoVivo
 
         public static Image Icon(Transform parent, IconKind kind, float size, bool badge = true)
         {
+            // Ícone 18x18 ampliado por múltiplo inteiro do pixel da interface.
+            int scale = size >= 100 ? 2 : 1;
+            float icon = 18 * PixelText.UiPixel * scale;
+            float holderSize = badge ? icon + 6 * PixelText.UiPixel : icon;
             var holder = Rect("ícone", parent);
-            LE(holder.gameObject, size, size, size, size);
-            if (badge)
-            {
-                var bg = Img(holder, Palette.UiCardHighlight, Art.Circle);
-                bg.type = Image.Type.Simple;
-            }
+            LE(holder.gameObject, holderSize, holderSize, holderSize, holderSize);
+            if (badge) Img(holder, Palette.UiCardHighlight);
             var ic = Rect("desenho", holder);
-            Stretch(ic, size * 0.12f, size * 0.12f, size * 0.12f, size * 0.12f);
+            ic.anchorMin = ic.anchorMax = new Vector2(0.5f, 0.5f);
+            ic.sizeDelta = new Vector2(icon, icon);
             var img = ic.gameObject.AddComponent<Image>();
             img.sprite = Art.Icon(kind);
-            img.preserveAspect = true;
             img.raycastTarget = false;
             return img;
         }
 
-        public static Text Label(Transform parent, string text, int size, Color color, TextAnchor anchor = TextAnchor.MiddleLeft, bool bold = false)
+        public static PixelText Label(Transform parent, string text, int size, Color color, TextAnchor anchor = TextAnchor.MiddleLeft, bool bold = false)
         {
             var rt = Rect("texto", parent);
-            var t = rt.gameObject.AddComponent<Text>();
-            t.font = DefaultFont;
+            if (rt.GetComponent<CanvasRenderer>() == null) rt.gameObject.AddComponent<CanvasRenderer>();
+            var t = rt.gameObject.AddComponent<PixelText>();
             t.text = text;
             t.fontSize = size;
             t.color = color;
             t.alignment = anchor;
-            t.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
-            t.horizontalOverflow = HorizontalWrapMode.Wrap;
-            t.verticalOverflow = VerticalWrapMode.Overflow;
-            t.supportRichText = true;
             t.raycastTarget = false;
-            t.lineSpacing = 1.05f;
             return t;
         }
 
@@ -160,7 +155,7 @@ namespace NucleoVivo
             var v = VLayout(rt.gameObject, 14, 2, TextAnchor.MiddleCenter);
             v.padding = new RectOffset(18, 18, 12, 12);
             var lbl = Label(rt, label, fontSize, Palette.UiText, TextAnchor.MiddleCenter, true);
-            Text subT = null;
+            PixelText subT = null;
             if (sub != null) subT = Label(rt, sub, Mathf.RoundToInt(fontSize * 0.75f), Palette.UiText.WithAlpha(0.85f), TextAnchor.MiddleCenter);
             var le = LE(rt.gameObject, -1, -1, 96, -1);
             return new ButtonView { button = b, bg = bg, label = lbl, sub = subT, rt = rt, layout = le };

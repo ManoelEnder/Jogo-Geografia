@@ -28,18 +28,18 @@ namespace NucleoVivo
         RectTransform safe, tapLayer, floatLayer, topBar, notices, bottomPanel, modalLayer;
 
         // topo
-        Text balanceText, clickText, passiveText, repText;
+        PixelText balanceText, clickText, passiveText, repText;
         Image repFill;
         RectTransform headline;
         Image headlineBg, headlineIcon;
-        Text headlineText;
-        Text effectsText;
+        PixelText headlineText;
+        PixelText effectsText;
         GameObject effectsPill;
 
         // toque
         RectTransform tapRt;
         RectTransform tutorial;
-        Text tutorialText;
+        PixelText tutorialText;
 
         // abas
         readonly RectTransform[] pages = new RectTransform[3];
@@ -53,38 +53,38 @@ namespace NucleoVivo
             public int index;
             public GameObject root;
             public Image bg, icon;
-            public Text title, gain, status;
+            public PixelText title, gain, status;
             public UIFactory.ButtonView buy;
         }
         readonly List<UpgradeRow> upgradeRows = new List<UpgradeRow>();
 
         // eventos
-        Text repCardText, repCardHint;
+        PixelText repCardText, repCardHint;
         Image repCardFill;
         RectTransform eventSlot;
         string builtEventKey = null;
-        Text eventStatusText, eventExpireText, effectsListText;
-        readonly List<KeyValuePair<UIFactory.ButtonView, Text>> choiceViews = new List<KeyValuePair<UIFactory.ButtonView, Text>>();
+        PixelText eventStatusText, eventExpireText, effectsListText;
+        readonly List<KeyValuePair<UIFactory.ButtonView, PixelText>> choiceViews = new List<KeyValuePair<UIFactory.ButtonView, PixelText>>();
 
         // renascimento
-        Text rbProgressText, rbGainText, rbNextText, rbOwnedText, statsText;
+        PixelText rbProgressText, rbGainText, rbNextText, rbOwnedText, statsText;
         Image rbFill;
         UIFactory.ButtonView rbButton;
-        class PermRow { public PermanentUpgradeDef def; public Text title, desc; public UIFactory.ButtonView buy; }
+        class PermRow { public PermanentUpgradeDef def; public PixelText title, desc; public UIFactory.ButtonView buy; }
         readonly List<PermRow> permRows = new List<PermRow>();
 
         // modais e avisos
         GameObject settingsModal, confirmModal;
-        Text confirmBody, soundLabel, resetLabel;
+        PixelText confirmBody, soundLabel, resetLabel;
         UIFactory.ButtonView soundButton;
         bool resetArmed;
-        Text captionText, toastText;
+        PixelText captionText, toastText;
         Image toastBg;
         float toastTimer;
         float refreshTimer;
         bool busy; // durante a transição
 
-        class Floater { public RectTransform rt; public Text text; public float age; public double value; public bool active; public float born; public Vector2 start; }
+        class Floater { public RectTransform rt; public PixelText text; public float age; public double value; public bool active; public float born; public Vector2 start; }
         readonly List<Floater> floaters = new List<Floater>();
 
         // ---------- inicialização ----------
@@ -129,6 +129,23 @@ namespace NucleoVivo
 
         void Play(Sfx s) { if (sfx != null) sfx.Play(s); }
 
+        /// <summary>
+        /// Mantém 1 pixel da interface (3 unidades) igual a um número inteiro de pixels da tela sempre que possível.
+        /// </summary>
+        void UpdateScale()
+        {
+            float w = PixelWidth, h = Mathf.Max(1, PixelHeight);
+            float k; // pixels de tela por pixel da interface
+            if (w / h > 0.75f) k = h / 640f;           // janela larga: guia pela altura
+            else
+            {
+                k = Mathf.Min(w / 360f, h / 640f);
+                if (k >= 1f) k = Mathf.Floor(k);
+                if (w * PixelText.UiPixel / k > 1500f) k = w / 360f; // evita interface minúscula
+            }
+            scaler.scaleFactor = Mathf.Max(0.1f, k / PixelText.UiPixel);
+        }
+
         // Funciona com o Canvas em Overlay (padrão) ou em modo câmera (usado nas capturas automáticas).
         Camera UiCam => canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
         int PixelWidth => UiCam != null ? UiCam.pixelWidth : Screen.width;
@@ -144,9 +161,8 @@ namespace NucleoVivo
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 10;
             scaler = canvasGo.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080, 1920);
-            scaler.matchWidthOrHeight = 0f;
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            UpdateScale();
             canvasGo.AddComponent<GraphicRaycaster>();
 
             safe = UIFactory.Stretch(UIFactory.Rect("Área segura", canvasGo.transform));
@@ -182,7 +198,7 @@ namespace NucleoVivo
             UIFactory.Img(tutorial, Palette.UiCard.WithAlpha(0.92f));
             var border = UIFactory.Rect("borda", tutorial);
             UIFactory.Stretch(border);
-            UIFactory.Img(border, Palette.Cyan.WithAlpha(0.8f), Art.RoundRectOutline);
+            UIFactory.Img(border, Palette.UiText.WithAlpha(0.8f), Art.RoundRectOutline);
             tutorialText = UIFactory.Label(tutorial, "Toque no reator para gerar Energia", 36, Palette.UiText, TextAnchor.MiddleCenter, true);
             UIFactory.Stretch((RectTransform)tutorialText.transform, 16, 8, 16, 8);
         }
@@ -223,7 +239,7 @@ namespace NucleoVivo
             repFill.fillMethod = Image.FillMethod.Horizontal;
         }
 
-        Text Chip(RectTransform parent, Vector2 pos, float width, IconKind kind)
+        PixelText Chip(RectTransform parent, Vector2 pos, float width, IconKind kind)
         {
             var chip = UIFactory.Rect("chip", parent);
             UIFactory.Anchor(chip, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), pos, new Vector2(width, 76));
@@ -291,7 +307,7 @@ namespace NucleoVivo
                 var badge = UIFactory.Rect("alerta", bv.rt);
                 var ble = badge.gameObject.AddComponent<LayoutElement>(); ble.ignoreLayout = true;
                 UIFactory.Anchor(badge, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-14, -12), new Vector2(26, 26));
-                tabBadges[i] = UIFactory.Img(badge, Palette.Amber, Art.Circle);
+                tabBadges[i] = UIFactory.Img(badge, Palette.UiNegative, Art.Circle);
                 tabBadges[i].type = Image.Type.Simple;
                 tabButtons[i] = bv;
 
@@ -323,7 +339,7 @@ namespace NucleoVivo
                 UIFactory.VLayout(info.gameObject, 0, 4);
                 UIFactory.LE(info.gameObject, 200, 200, -1, -1, 1);
                 row.title = UIFactory.Label(info, u.displayName, 38, Palette.UiText, TextAnchor.MiddleLeft, true);
-                row.gain = UIFactory.Label(info, "", 30, Palette.Cyan);
+                row.gain = UIFactory.Label(info, "", 30, Palette.UiText);
                 row.status = UIFactory.Label(info, "", 28, Palette.UiMuted);
 
                 row.buy = UIFactory.Button(bg.transform, "10", Palette.UiButton, () => Buy(idx), 40, "Comprar");
@@ -357,12 +373,12 @@ namespace NucleoVivo
                 if (!visible) continue;
 
                 row.icon.sprite = Art.Icon(unlocked ? u.icon : IconKind.Lock);
-                row.title.text = u.displayName + (lv > 0 ? "  <color=#8FA9B3>Nv " + lv + "</color>" : "");
+                row.title.text = u.displayName + (lv > 0 ? "  <color=#9AA29E>Nv " + lv + "</color>" : "");
                 if (!unlocked)
                 {
                     double missing = u.unlockAtProduced - gm.State.campaignProduced;
                     row.gain.text = Gain(row.index);
-                    row.status.text = "<color=#FFB54A>Libera com " + NumberFormat.Short(u.unlockAtProduced) + " de Energia produzida na campanha (faltam " + NumberFormat.Short(missing) + ")</color>";
+                    row.status.text = "<color=#E3826F>Libera com " + NumberFormat.Short(u.unlockAtProduced) + " de Energia produzida na campanha (faltam " + NumberFormat.Short(missing) + ")</color>";
                     row.buy.rt.gameObject.SetActive(false);
                     row.bg.color = Palette.UiCard.WithAlpha(0.6f);
                     continue;
@@ -373,7 +389,7 @@ namespace NucleoVivo
                 bool can = eco.CanBuy(row.index);
                 row.gain.text = Gain(row.index);
                 string milestone = NextMilestoneText(u, lv);
-                row.status.text = can ? milestone : "<color=#FFB54A>Faltam " + NumberFormat.Short(cost - gm.State.energy) + " de Energia</color>" + (milestone.Length > 0 ? "  ·  " + milestone : "");
+                row.status.text = can ? milestone : "<color=#E3826F>Faltam " + NumberFormat.Short(cost - gm.State.energy) + " de Energia</color>" + (milestone.Length > 0 ? "  ·  " + milestone : "");
                 row.buy.label.text = NumberFormat.Short(cost);
                 row.buy.sub.text = lv == 0 ? "Instalar" : "Comprar";
                 UIFactory.SetInteractable(row.buy, can, Palette.UiButton);
@@ -450,7 +466,7 @@ namespace NucleoVivo
             var titles = UIFactory.Rect("títulos", head);
             UIFactory.VLayout(titles.gameObject, 0, 4);
             UIFactory.LE(titles.gameObject, 200, 200, -1, -1, 1);
-            string tag = e.tone == EventTone.Positive ? "<color=#6BE38F>OPORTUNIDADE</color>" : e.tone == EventTone.Negative ? "<color=#FF7466>PROBLEMA</color>" : "<color=#FFB54A>DECISÃO</color>";
+            string tag = e.tone == EventTone.Positive ? "<color=#86C995>OPORTUNIDADE</color>" : e.tone == EventTone.Negative ? "<color=#E3826F>PROBLEMA</color>" : "<color=#E3826F>DECISÃO</color>";
             UIFactory.Label(titles, tag, 26, Palette.UiText, TextAnchor.MiddleLeft, true);
             UIFactory.Label(titles, e.title, 38, Palette.UiText, TextAnchor.MiddleLeft, true);
 
@@ -464,7 +480,7 @@ namespace NucleoVivo
                 var bv = UIFactory.Button(card.transform, c.label, Palette.UiButton, () => Choose(idx), 34, c.description);
                 bv.sub.fontSize = 26;
                 var effect = UIFactory.Label(bv.rt, "", 26, Palette.UiText, TextAnchor.MiddleCenter, true);
-                choiceViews.Add(new KeyValuePair<UIFactory.ButtonView, Text>(bv, effect));
+                choiceViews.Add(new KeyValuePair<UIFactory.ButtonView, PixelText>(bv, effect));
             }
         }
 
@@ -488,7 +504,7 @@ namespace NucleoVivo
                 : rep >= 35 ? "A cidade observa a usina com cautela. Reputação 65+ libera reportagens positivas."
                 : "Moradores desconfiados: protestos e problemas ficam mais prováveis. Auditorias e visitas ajudam a recuperar a confiança.";
             float temp = rep - s.reputation;
-            if (Mathf.Abs(temp) > 0.5f) hint += "\n<color=#FFB54A>" + (temp > 0 ? "+" : "") + Mathf.RoundToInt(temp) + " temporário por eventos recentes.</color>";
+            if (Mathf.Abs(temp) > 0.5f) hint += "\n<color=#E3826F>" + (temp > 0 ? "+" : "") + Mathf.RoundToInt(temp) + " temporário por eventos recentes.</color>";
             repCardHint.text = hint;
 
             string key = s.HasPendingEvent ? s.pendingEventId : (s.eventsEnabled ? "calmo" : "bloqueado");
@@ -518,7 +534,7 @@ namespace NucleoVivo
                     choiceViews[i].Value.text = desc;
                     bv.button.interactable = can;
                     bv.bg.color = can ? (i == 0 ? Palette.UiButton : Palette.UiCardHighlight) : Palette.UiButtonDisabled;
-                    choiceViews[i].Value.color = can ? Palette.UiText : Palette.Amber;
+                    choiceViews[i].Value.color = can ? Palette.UiText : Palette.UiNegative;
                 }
             }
 
@@ -529,7 +545,7 @@ namespace NucleoVivo
                 foreach (var fx in s.effects)
                 {
                     bool good = fx.kind == EffectKind.ReputationTemp ? fx.value > 0 : fx.value >= 1f;
-                    sb.Append(good ? "<color=#6BE38F>" : "<color=#FF7466>");
+                    sb.Append(good ? "<color=#86C995>" : "<color=#E3826F>");
                     sb.Append(EventDirector.DescribeEffect(fx.kind, fx.value)).Append("</color>  ·  ")
                       .Append(NumberFormat.Duration(fx.remaining)).Append(" restantes  ·  <i>").Append(fx.label).Append("</i>\n");
                 }
@@ -537,7 +553,7 @@ namespace NucleoVivo
             }
         }
 
-        static Color RepColor(float rep) => rep >= 65 ? Palette.UiPositive : rep >= 35 ? Palette.Amber : Palette.UiNegative;
+        static Color RepColor(float rep) => rep >= 65 ? Palette.UiPositive : rep >= 35 ? Palette.ConcreteLight : Palette.UiNegative;
 
         // ---------- aba Renascimento ----------
         void BuildRebirthPage(RectTransform page)
@@ -560,7 +576,7 @@ namespace NucleoVivo
             UIFactory.LE(barBg.gameObject, -1, -1, 26, 26);
             UIFactory.Img(barBg, Palette.UiCard);
             var fill = UIFactory.Stretch(UIFactory.Rect("preenchimento", barBg));
-            rbFill = UIFactory.Img(fill, Palette.Cyan, Art.Pixel);
+            rbFill = UIFactory.Img(fill, Palette.UiPositive, Art.Pixel);
             rbFill.type = Image.Type.Filled; rbFill.fillMethod = Image.FillMethod.Horizontal;
             rbGainText = UIFactory.Label(card.transform, "", 32, Palette.UiText, TextAnchor.MiddleLeft, true);
             rbNextText = UIFactory.Label(card.transform, "", 26, Palette.UiMuted);
@@ -579,7 +595,7 @@ namespace NucleoVivo
                 var row = new PermRow { def = p };
                 row.title = UIFactory.Label(info, p.displayName, 36, Palette.UiText, TextAnchor.MiddleLeft, true);
                 UIFactory.Label(info, p.description, 26, Palette.UiMuted);
-                row.desc = UIFactory.Label(info, "", 28, Palette.Cyan);
+                row.desc = UIFactory.Label(info, "", 28, Palette.UiText);
                 row.buy = UIFactory.Button(bg.transform, "1", Palette.UiButton, () => BuyPermanent(def), 38, "Núcleo");
                 UIFactory.LE(row.buy.rt.gameObject, 220, 220, 120, 120, 0);
                 permRows.Add(row);
@@ -607,19 +623,19 @@ namespace NucleoVivo
             rbProgressText.text = "Energia produzida nesta campanha: <b>" + NumberFormat.Short(s.campaignProduced) + "</b> / " + NumberFormat.Short(th);
             rbFill.fillAmount = (float)rb.Progress01;
             int pending = rb.PendingNucleos;
-            rbGainText.text = pending > 0 ? "Ao renascer agora: <color=#3BF0FF>+" + pending + " Núcleo" + (pending > 1 ? "s" : "") + "</color>"
+            rbGainText.text = pending > 0 ? "Ao renascer agora: <color=#ECEEE9>+" + pending + " Núcleo" + (pending > 1 ? "s" : "") + "</color>"
                                           : "Renascimento libera com " + NumberFormat.Full(th) + " de Energia produzida (inclui o que já foi gasto).";
             rbNextText.text = pending > 0
                 ? "Próximo Núcleo com " + NumberFormat.Short(rb.NextNucleoAt) + " produzidos (faltam " + NumberFormat.Short(rb.RemainingForNextNucleo) + ")."
                 : "Faltam " + NumberFormat.Short(th - s.campaignProduced) + " de Energia produzida.";
             UIFactory.SetInteractable(rbButton, rb.CanRebirth && !busy, Palette.UiButton);
 
-            rbOwnedText.text = "Núcleos disponíveis: <color=#3BF0FF>" + s.nucleos + "</color>   <size=26><color=#8FA9B3>Melhorias permanentes</color></size>";
+            rbOwnedText.text = "Núcleos disponíveis: <color=#ECEEE9>" + s.nucleos + "</color>   <size=26><color=#9AA29E>Melhorias permanentes</color></size>";
             foreach (var row in permRows)
             {
                 int lv = rb.PermanentLevel(row.def);
                 bool maxed = rb.PermanentMaxed(row.def);
-                row.title.text = row.def.displayName + (lv > 0 ? "  <color=#8FA9B3>Nv " + lv + "</color>" : "");
+                row.title.text = row.def.displayName + (lv > 0 ? "  <color=#9AA29E>Nv " + lv + "</color>" : "");
                 row.desc.text = maxed ? RebirthSystem.DescribePermanent(row.def, lv) + " (máximo)"
                     : (lv > 0 ? RebirthSystem.DescribePermanent(row.def, lv) + "  →  " : "") + RebirthSystem.DescribePermanent(row.def, lv + 1);
                 int cost = rb.PermanentCost(row.def);
@@ -669,7 +685,7 @@ namespace NucleoVivo
             resetLabel = reset.label;
             string help = "Toque no reator (ou aperte Espaço no PC) para gerar Energia. O jogo salva sozinho a cada poucos segundos e após compras, decisões e Renascimentos.";
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            help += "\n\n<color=#FFB54A>Atalhos de teste (Editor):</color> F1 +1 mil de Energia · F2 +25 mil · F3 sortear evento · F4 recarregar save";
+            help += "\n\n<color=#E3826F>Atalhos de teste (Editor):</color> F1 +1 mil de Energia · F2 +25 mil · F3 sortear evento · F4 recarregar save";
 #endif
             UIFactory.Label(card, help, 26, Palette.UiMuted, TextAnchor.MiddleCenter);
             UIFactory.Button(card, "Fechar", Palette.UiCard, CloseModals, 34);
@@ -721,20 +737,20 @@ namespace NucleoVivo
             int n = gm.Rebirth.PendingNucleos;
             int total = gm.State.nucleos + n;
             var sb = new System.Text.StringBuilder();
-            sb.Append("Você receberá <color=#3BF0FF><b>").Append(n).Append(" Núcleo").Append(n > 1 ? "s" : "").Append("</b></color> (total: ").Append(total).Append(").\n\n");
+            sb.Append("Você receberá <color=#ECEEE9><b>").Append(n).Append(" Núcleo").Append(n > 1 ? "s" : "").Append("</b></color> (total: ").Append(total).Append(").\n\n");
             sb.Append("<b>Com eles você pode comprar:</b>\n");
             foreach (var p in gm.Config.permanentUpgrades)
             {
                 int lv = gm.Rebirth.PermanentLevel(p);
                 if (gm.Rebirth.PermanentMaxed(p)) continue;
                 int cost = gm.Rebirth.PermanentCost(p);
-                sb.Append(cost <= total ? "• " : "<color=#8FA9B3>• ").Append(p.displayName).Append(": ").Append(RebirthSystem.DescribePermanent(p, lv + 1))
+                sb.Append(cost <= total ? "• " : "<color=#9AA29E>• ").Append(p.displayName).Append(": ").Append(RebirthSystem.DescribePermanent(p, lv + 1))
                   .Append(" (").Append(cost).Append(cost == 1 ? " Núcleo)" : " Núcleos)").Append(cost <= total ? "" : "</color>").Append("\n");
             }
-            sb.Append("\n<color=#FF7466><b>Será reiniciado:</b></color> saldo de Energia (").Append(NumberFormat.Short(gm.State.energy))
+            sb.Append("\n<color=#E3826F><b>Será reiniciado:</b></color> saldo de Energia (").Append(NumberFormat.Short(gm.State.energy))
               .Append("), Energia produzida na campanha (").Append(NumberFormat.Short(gm.State.campaignProduced))
               .Append("), níveis das melhorias (").Append(gm.Economy.TotalUpgradeLevels()).Append(" níveis), reputação e eventos ativos.\n");
-            sb.Append("<color=#6BE38F><b>Será mantido:</b></color> Núcleos, melhorias permanentes, estatísticas e configurações.");
+            sb.Append("<color=#86C995><b>Será mantido:</b></color> Núcleos, melhorias permanentes, estatísticas e configurações.");
             confirmBody.text = sb.ToString();
             confirmModal.SetActive(true);
         }
@@ -781,9 +797,6 @@ namespace NucleoVivo
         {
             captionText = UIFactory.Label(safe, "", 46, Palette.UiText, TextAnchor.MiddleCenter, true);
             UIFactory.Anchor((RectTransform)captionText.transform, new Vector2(0, 0.62f), new Vector2(1, 0.62f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-80, 200));
-            var outline = captionText.gameObject.AddComponent<Outline>();
-            outline.effectColor = new Color(0, 0, 0, 0.8f);
-            outline.effectDistance = new Vector2(2, -2);
             captionText.gameObject.SetActive(false);
 
             var toast = UIFactory.Rect("Aviso", safe);
@@ -814,13 +827,10 @@ namespace NucleoVivo
         {
             for (int i = 0; i < 14; i++)
             {
-                var t = UIFactory.Label(floatLayer, "", 56, Palette.Cyan, TextAnchor.MiddleCenter, true);
+                var t = UIFactory.Label(floatLayer, "", 56, Palette.UiText, TextAnchor.MiddleCenter, true);
                 var rt = (RectTransform)t.transform;
                 rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
                 rt.sizeDelta = new Vector2(420, 90);
-                var o = t.gameObject.AddComponent<Outline>();
-                o.effectColor = new Color(0, 0.1f, 0.15f, 0.9f);
-                o.effectDistance = new Vector2(3, -3);
                 t.gameObject.SetActive(false);
                 floaters.Add(new Floater { rt = rt, text = t });
             }
@@ -861,10 +871,10 @@ namespace NucleoVivo
                 f.age += dt;
                 float t = f.age / 0.9f;
                 if (t >= 1f) { f.active = false; f.text.gameObject.SetActive(false); continue; }
-                f.rt.anchoredPosition = f.start + new Vector2(0, 170f * (1f - (1f - t) * (1f - t)));
-                float sc = 1f + 0.25f * Mathf.Max(0, 1f - f.age * 8f);
-                f.rt.localScale = new Vector3(sc, sc, 1);
-                f.text.color = Palette.Cyan.WithAlpha(1f - t * t);
+                float rise = Mathf.Round(170f * (1f - (1f - t) * (1f - t)) / PixelText.UiPixel) * PixelText.UiPixel;
+                f.rt.anchoredPosition = f.start + new Vector2(0, rise);
+                f.rt.localScale = Vector3.one;
+                f.text.color = t < 0.75f ? Palette.UiText : Palette.UiMuted;
             }
         }
 
@@ -883,9 +893,7 @@ namespace NucleoVivo
             if (gm == null) return;
             float dt = Time.unscaledDeltaTime;
 
-            // Escala da interface: retrato prioriza a largura, janela larga (PC) prioriza a altura.
-            float aspect = (float)PixelWidth / Mathf.Max(1, PixelHeight);
-            scaler.matchWidthOrHeight = aspect > 0.75f ? 1f : 0f;
+            UpdateScale();
 
             HandleKeyboard();
             UpdateHud();
@@ -923,8 +931,10 @@ namespace NucleoVivo
         void PositionTapArea()
         {
             Rect wr = plant.ReactorWorldRect;
-            Vector3 a = plant.Cam.WorldToScreenPoint(new Vector3(wr.xMin, wr.yMin, 0));
-            Vector3 b = plant.Cam.WorldToScreenPoint(new Vector3(wr.xMax, wr.yMax, 0));
+            Vector2 va = plant.WorldToViewport(new Vector3(wr.xMin, wr.yMin, 0));
+            Vector2 vb = plant.WorldToViewport(new Vector3(wr.xMax, wr.yMax, 0));
+            Vector2 a = new Vector2(va.x * PixelWidth, va.y * PixelHeight);
+            Vector2 b = new Vector2(vb.x * PixelWidth, vb.y * PixelHeight);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(tapLayer, a, UiCam, out var la);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(tapLayer, b, UiCam, out var lb);
             Vector2 center = (la + lb) * 0.5f - tapLayer.rect.center;
@@ -980,9 +990,9 @@ namespace NucleoVivo
             if (showHead)
             {
                 headlineIcon.sprite = Art.Icon(e.icon);
-                headlineText.text = "<b>" + e.headline + "</b>\n<color=#8FA9B3>Toque para ler e decidir</color>";
-                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4f);
-                Color tone = e.tone == EventTone.Positive ? Palette.UiPositive : e.tone == EventTone.Negative ? Palette.UiNegative : Palette.Amber;
+                headlineText.text = "<b>" + e.headline + "</b>\n<color=#9AA29E>Toque para ler e decidir</color>";
+                float pulse = Mathf.Repeat(Time.unscaledTime, 1f) < 0.5f ? 1f : 0f;
+                Color tone = e.tone == EventTone.Positive ? Palette.UiPositive : e.tone == EventTone.Negative ? Palette.UiNegative : Palette.UiNegative;
                 headlineBg.color = Color.Lerp(Palette.UiCard, Color.Lerp(Palette.UiCard, tone, 0.35f), pulse);
             }
 
@@ -996,7 +1006,7 @@ namespace NucleoVivo
                     var fx = s.effects[i];
                     bool good = fx.kind == EffectKind.ReputationTemp ? fx.value > 0 : fx.value >= 1f;
                     if (i > 0) sb.Append("\n");
-                    sb.Append(good ? "<color=#6BE38F>" : "<color=#FF7466>").Append(EventDirector.DescribeEffect(fx.kind, fx.value))
+                    sb.Append(good ? "<color=#86C995>" : "<color=#E3826F>").Append(EventDirector.DescribeEffect(fx.kind, fx.value))
                       .Append("</color>  ·  ").Append(NumberFormat.Duration(fx.remaining));
                 }
                 effectsText.text = sb.ToString();
@@ -1025,7 +1035,7 @@ namespace NucleoVivo
             {
                 pages[i].gameObject.SetActive(i == tab);
                 tabButtons[i].bg.color = i == tab ? Palette.UiCardHighlight : Palette.UiCard;
-                tabButtons[i].label.color = i == tab ? Palette.Cyan : Palette.UiMuted;
+                tabButtons[i].label.color = i == tab ? Palette.UiText : Palette.UiMuted;
             }
             RefreshCurrentTab();
         }

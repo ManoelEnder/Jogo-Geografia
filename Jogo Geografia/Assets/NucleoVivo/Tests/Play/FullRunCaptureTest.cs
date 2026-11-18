@@ -57,19 +57,19 @@ namespace NucleoVivo.Tests
             if (gm != null) gm.enabled = false; // evita salvar por cima ao sair
             SaveSystem.Delete();
             if (File.Exists(backupPath)) { File.Copy(backupPath, savePath, true); File.Delete(backupPath); }
-            if (plant != null && plant.Cam != null) plant.Cam.targetTexture = null;
+            if (plant != null && plant.Cam != null) plant.PresentCamera.targetTexture = null;
             if (rt != null) rt.Release();
             yield return null;
         }
 
         IEnumerator SetResolution(int w, int h)
         {
-            if (rt != null) { plant.Cam.targetTexture = null; rt.Release(); }
+            if (rt != null) { plant.PresentCamera.targetTexture = null; rt.Release(); }
             rt = new RenderTexture(w, h, 24);
-            plant.Cam.targetTexture = rt;
+            plant.PresentCamera.targetTexture = rt;
             var canvas = ui.GetComponentInChildren<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
-            canvas.worldCamera = plant.Cam;
+            canvas.worldCamera = plant.PresentCamera;
             canvas.planeDistance = 1f;
             for (int i = 0; i < 4; i++) yield return null;
         }
@@ -79,6 +79,7 @@ namespace NucleoVivo.Tests
             yield return null;
             yield return null;
             plant.Cam.Render();
+            plant.PresentCamera.Render();
             var prev = RenderTexture.active;
             RenderTexture.active = rt;
             var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
@@ -104,7 +105,7 @@ namespace NucleoVivo.Tests
 
         void Tap(int times)
         {
-            Vector2 center = new Vector2(plant.Cam.pixelWidth * 0.5f, plant.Cam.pixelHeight * 0.55f);
+            Vector2 center = new Vector2(plant.PresentCamera.pixelWidth * 0.5f, plant.PresentCamera.pixelHeight * 0.55f);
             for (int i = 0; i < times; i++) Call("DoTap", center);
         }
 

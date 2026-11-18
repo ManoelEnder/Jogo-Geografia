@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace NucleoVivo
 {
@@ -42,7 +43,8 @@ namespace NucleoVivo
         readonly List<SpriteRenderer> reactorLights = new List<SpriteRenderer>();
         readonly List<SpriteRenderer> domeLights = new List<SpriteRenderer>();
         Transform reactorTf;
-        TextMesh signText;
+        SpriteRenderer signText;
+        int signGeneration = -1;
         SpriteRenderer signBoard;
 
         readonly List<Transform> rotors = new List<Transform>();
@@ -80,6 +82,8 @@ namespace NucleoVivo
             Cam.orthographic = true;
             Cam.clearFlags = CameraClearFlags.SolidColor;
             Cam.backgroundColor = Palette.SkyTop;
+            Cam.cullingMask &= ~(1 << 5); // a câmera do mundo não desenha a interface
+            BuildPresenter();
 
             Build();
             if (gm != null)
@@ -92,8 +96,78 @@ namespace NucleoVivo
             RefreshAll(true);
         }
 
+        // ---------- pixel art: o mundo é desenhado numa textura pequena e ampliado sem filtro ----------
+        [Header("Pixel art")]
+        [Tooltip("Largura alvo, em pixels, da imagem do cenário (o resto é ampliação inteira).")]
+        public int targetPixelWidth = 270;
+
+        Camera presentCam;
+        RawImage presentImage;
+        RenderTexture lowRes;
+
+        /// <summary>Câmera que desenha a imagem ampliada na tela (e a interface nas capturas).</summary>
+        public Camera PresentCamera => presentCam;
+
+        void BuildPresenter()
+        {
+            var go = new GameObject("Câmera de apresentação");
+            go.transform.SetParent(transform, false);
+            go.transform.position = new Vector3(5000, 5000, -10);
+            presentCam = go.AddComponent<Camera>();
+            presentCam.orthographic = true;
+            presentCam.clearFlags = CameraClearFlags.SolidColor;
+            presentCam.backgroundColor = Color.black;
+            presentCam.cullingMask = 1 << 5;
+            presentCam.depth = Cam.depth + 10;
+            presentCam.nearClipPlane = 0.1f; presentCam.farClipPlane = 200f;
+
+            var canvasGo = new GameObject("Imagem do cenário", typeof(RectTransform));
+            canvasGo.layer = 5;
+            canvasGo.transform.SetParent(transform, false);
+            var canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = presentCam;
+            canvas.planeDistance = 100f;
+            canvas.sortingOrder = -100;
+            var imgGo = new GameObject("pixels", typeof(RectTransform));
+            imgGo.layer = 5;
+            imgGo.transform.SetParent(canvasGo.transform, false);
+            var rt = (RectTransform)imgGo.transform;
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = rt.offsetMax = Vector2.zero;
+            presentImage = imgGo.AddComponent<RawImage>();
+            presentImage.raycastTarget = false;
+            EnsureLowRes();
+        }
+
+        Vector2Int OutputSize()
+        {
+            var t = presentCam != null ? presentCam.targetTexture : null;
+            return t != null ? new Vector2Int(t.width, t.height) : new Vector2Int(Mathf.Max(1, Screen.width), Mathf.Max(1, Screen.height));
+        }
+
+        void EnsureLowRes()
+        {
+            var o = OutputSize();
+            int scale = Mathf.Max(1, Mathf.RoundToInt(Mathf.Min(o.x / (float)targetPixelWidth, o.y / (targetPixelWidth * 16f / 9f))));
+            int w = Mathf.CeilToInt(o.x / (float)scale), h = Mathf.CeilToInt(o.y / (float)scale);
+            if (lowRes != null && lowRes.width == w && lowRes.height == h) return;
+            if (lowRes != null) { Cam.targetTexture = null; lowRes.Release(); Destroy(lowRes); }
+            lowRes = new RenderTexture(w, h, 16) { filterMode = FilterMode.Point, name = "cenário em pixels" };
+            Cam.targetTexture = lowRes;
+            presentImage.texture = lowRes;
+        }
+
+        /// <summary>Converte um ponto do mundo para a fração (0..1) da tela.</summary>
+        public Vector2 WorldToViewport(Vector3 world) => Cam.WorldToViewportPoint(world);
+
+        void OnDestroy()
+        {
+            if (lowRes != null) lowRes.Release();
+        }
+
         void LateUpdate()
         {
+            if (presentCam != null) EnsureLowRes();
             FitCamera();
             Animate(Time.deltaTime);
             if (gm != null && !transitioning) RefreshUnlockGhosts();
@@ -112,7 +186,10 @@ namespace NucleoVivo
             float centerFrac = (viewportBottom + viewportTop) * 0.5f;
             float y = focusY - (centerFrac - 0.5f) * 2f * size;
             Vector2 sh = shake > 0 ? UnityEngine.Random.insideUnitCircle * shake * 0.08f : Vector2.zero;
-            Cam.transform.position = new Vector3(sh.x, y + sh.y, -10f);
+            float unit = 2f * size / Mathf.Max(1, Cam.pixelHeight); // tamanho de 1 pixel no mundo
+            Vector2 pos = new Vector2(sh.x, y + sh.y);
+            pos = new Vector2(Mathf.Round(pos.x / unit) * unit, Mathf.Round(pos.y / unit) * unit);
+            Cam.transform.position = new Vector3(pos.x, pos.y, -10f);
         }
 
         // ---------- construção ----------
@@ -161,25 +238,25 @@ namespace NucleoVivo
             worldRoot.SetParent(transform, false);
 
             // Céu e estrelas
-            Make("Céu", worldRoot, Art.SkyGradient, new Vector2(0, 0.5f), new Vector2(40f * 256f / 8f, 22), Color.white, -100); // textura de 8 px de largura
-            Make("Céu baixo", worldRoot, Art.PixelBottom, new Vector2(0, -20f), new Vector2(40, 20.6f), Palette.SkyHorizon, -101);
+            Make("Céu", worldRoot, Art.SkyGradient, new Vector2(0, -4.5f), Vector2.one, Color.white, -100);
+            Make("Céu baixo", worldRoot, Art.PixelBottom, new Vector2(0, -24f), new Vector2(40, 19.6f), Palette.SkyHorizon, -101);
             for (int i = 0; i < 40; i++)
             {
                 float x = (float)(rnd.NextDouble() * 12 - 6), y = 5.2f + (float)rnd.NextDouble() * 6f;
-                float sz = 0.025f + (float)rnd.NextDouble() * 0.035f;
-                stars.Add(Make("estrela", worldRoot, Art.Circle, new Vector2(x, y), new Vector2(sz, sz), Color.white.WithAlpha(0.5f), -99));
+                float sz = rnd.NextDouble() < 0.2 ? 2f / Art.WorldPPU : 1f / Art.WorldPPU;
+                stars.Add(Make("estrela", worldRoot, Art.Pixel, new Vector2(x, y), new Vector2(sz, sz), Color.white, -99));
             }
 
             BuildCity();
 
             // Colinas
-            Make("Colinas distantes", worldRoot, Art.Hills(3), new Vector2(0, 1.9f), new Vector2(14f, 2.0f), Palette.HillFar, -80);
-            Make("Colinas", worldRoot, Art.Hills(11), new Vector2(0.6f, 0.9f), new Vector2(15f, 2.0f), Palette.HillMid, -75);
+            Make("Colinas distantes", worldRoot, Art.Hills(3, Palette.HillFar, Color.Lerp(Palette.HillFar, Palette.SkyHorizon, 0.6f)), new Vector2(0, 1.15f), Vector2.one, Color.white, -80);
+            Make("Colinas", worldRoot, Art.Hills(11, Palette.HillMid, Palette.GreenLight), new Vector2(0.6f, 0.3f), Vector2.one, Color.white, -75);
             for (int i = 0; i < 22; i++)
             {
                 float x = -6.5f + i * 0.62f + (float)rnd.NextDouble() * 0.3f;
                 if (Mathf.Abs(x) < 3.5f && rnd.NextDouble() < 0.6) continue;
-                float sc = 0.35f + (float)rnd.NextDouble() * 0.25f;
+                float sc = rnd.NextDouble() < 0.5 ? 0.5f : 0.75f;
                 Make("árvore", worldRoot, Art.Tree, new Vector2(x, 1.0f + (float)rnd.NextDouble() * 0.5f), new Vector2(sc, sc), Color.white, -74);
             }
 
@@ -196,15 +273,15 @@ namespace NucleoVivo
             for (int i = 0; i < 14; i++)
             {
                 var r = Make("ondulação", worldRoot, Art.Pixel, new Vector2((float)(rnd.NextDouble() * 12 - 6), -2.85f - (float)rnd.NextDouble() * 0.9f),
-                    new Vector2(0.3f + (float)rnd.NextDouble() * 0.5f, 0.035f), Palette.RiverLight.WithAlpha(0.7f), -9);
+                    new Vector2(Mathf.Round((0.3f + (float)rnd.NextDouble() * 0.5f) * Art.WorldPPU) / Art.WorldPPU, 1f / Art.WorldPPU), Palette.RiverLight, -9);
                 ripples.Add(r);
             }
             Make("Margem próxima", worldRoot, Art.PixelBottom, new Vector2(0, -6.2f), new Vector2(16, 2.4f), Palette.GreenDark, -5);
             for (int i = 0; i < 8; i++)
             {
                 float x = -5.6f + i * 1.6f + (float)rnd.NextDouble() * 0.5f;
-                float sc = 0.6f + (float)rnd.NextDouble() * 0.3f;
-                Make("árvore próxima", worldRoot, Art.Tree, new Vector2(x, -4.1f), new Vector2(sc, sc), Color.Lerp(Color.white, Color.black, 0.25f), -4);
+                float sc = rnd.NextDouble() < 0.5 ? 1f : 1.25f;
+                Make("árvore próxima", worldRoot, Art.Tree, new Vector2(x, -4.1f), new Vector2(sc, sc), new Color(0.7f, 0.7f, 0.7f, 1f), -4);
             }
 
             structures = new Structure[7];
@@ -223,7 +300,7 @@ namespace NucleoVivo
             darkOverlay = Make("Escuridão", worldRoot, Art.Pixel, Vector2.zero, new Vector2(60, 60), new Color(0.01f, 0.03f, 0.05f, 0), 30);
             for (int i = 0; i < 18; i++)
             {
-                var sr = Make("vapor", worldRoot, Art.Glow, Vector2.zero, Vector2.one, Color.white.WithAlpha(0), -44);
+                var sr = Make("vapor", worldRoot, Art.Circle, Vector2.zero, Vector2.one, Color.white.WithAlpha(0), -44);
                 sr.gameObject.SetActive(false);
                 steam.Add(new Steam { sr = sr });
             }
@@ -244,7 +321,7 @@ namespace NucleoVivo
                 {
                     float w = 0.32f + (float)rnd.NextDouble() * 0.35f;
                     float h = 0.5f + (float)rnd.NextDouble() * (d == 2 ? 1.5f : 1.0f);
-                    float baseY = 2.55f;
+                    float baseY = 2.95f;
                     Color body = Color.Lerp(Palette.PetrolDark, Palette.SkyMid, (float)rnd.NextDouble() * 0.5f);
                     Make("prédio", cityRoot, Art.PixelBottom, new Vector2(x + w * 0.5f, baseY), new Vector2(w, h), body, -92);
                     int cols = Mathf.Max(1, Mathf.FloorToInt(w / 0.11f));
@@ -337,7 +414,7 @@ namespace NucleoVivo
         SpriteRenderer Line(Structure s, Transform t, Vector2 a, Vector2 b, int order, int tier)
         {
             Vector2 d = b - a;
-            var sr = Part(s, "cabo", t, Art.Pixel, (a + b) * 0.5f, new Vector2(d.magnitude, 0.035f), Palette.ConcreteDark, order, tier);
+            var sr = Part(s, "cabo", t, Art.Pixel, (a + b) * 0.5f, new Vector2(d.magnitude, 1.2f / Art.WorldPPU), Palette.ConcreteDark, order, tier);
             sr.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
             return sr;
         }
@@ -431,23 +508,10 @@ namespace NucleoVivo
             var root = new GameObject("Letreiro").transform;
             root.SetParent(worldRoot, false);
             root.localPosition = new Vector2(0.15f, -2.42f);
-            signBoard = Make("placa", root, Art.Pixel, Vector2.zero, new Vector2(2.3f, 0.3f), Palette.PetrolDark, -20);
-            Make("borda", root, Art.Pixel, new Vector2(0, -0.17f), new Vector2(2.3f, 0.04f), Palette.Cyan.WithAlpha(0.6f), -19);
-            var go = new GameObject("texto");
-            go.transform.SetParent(root, false);
-            go.transform.localPosition = new Vector3(0, 0.0f, -0.01f);
-            signText = go.AddComponent<TextMesh>();
-            var font = UIFactory.DefaultFont;
-            signText.font = font;
-            signText.fontSize = 64;
-            signText.characterSize = 0.035f;
-            signText.anchor = TextAnchor.MiddleCenter;
-            signText.alignment = TextAlignment.Center;
-            signText.color = Palette.Amber;
-            signText.fontStyle = FontStyle.Bold;
-            var mr = go.GetComponent<MeshRenderer>();
-            mr.sharedMaterial = font.material;
-            mr.sortingOrder = -18;
+            signBoard = Make("placa", root, Art.Pixel, Vector2.zero, new Vector2(4.6f, 0.62f), Palette.PetrolDark, -20);
+            Make("borda", root, Art.Pixel, new Vector2(0, -0.31f), new Vector2(4.6f, 1f / Art.WorldPPU), Palette.Cyan, -19);
+            Make("borda topo", root, Art.Pixel, new Vector2(0, 0.31f), new Vector2(4.6f, 1f / Art.WorldPPU), Palette.PetrolLight, -19);
+            signText = Make("texto", root, null, new Vector2(0, 0.02f), Vector2.one, Color.white, -18);
         }
 
         // ---------- estado -> visual ----------
@@ -499,7 +563,7 @@ namespace NucleoVivo
             for (int t = 1; t <= 3; t++)
                 foreach (var go in s.tierObjects[t]) go.SetActive(tier >= t || (ghost && t == 1));
             foreach (var kv in s.parts)
-                kv.Key.color = ghost ? Palette.Cyan.WithAlpha(0.16f) : kv.Value;
+                kv.Key.color = ghost ? Palette.ConcreteLight.WithAlpha(0.16f) : kv.Value;
             if (grew) s.pop = 1f;
         }
 
@@ -529,7 +593,8 @@ namespace NucleoVivo
 
         static void SetWindow(Window w, float level)
         {
-            w.sr.color = Color.Lerp(Palette.WindowOff, Palette.Amber, level);
+            // três tons fixos, sem degradê
+            w.sr.color = level > 0.7f ? Palette.Amber : level > 0.25f ? Palette.AmberDim : Palette.WindowOff;
         }
 
         void RefreshGeneration()
@@ -539,7 +604,11 @@ namespace NucleoVivo
             Color sc = stripe[(gen - 1) % stripe.Length];
             reactorStripe.color = gen > 1 ? sc.WithAlpha(0.55f) : sc.WithAlpha(0f);
             for (int i = 0; i < domeLights.Count; i++) domeLights[i].gameObject.SetActive(gen > 1 && i < 3 + gen * 2);
-            signText.text = "NÚCLEO VIVO  ·  GERAÇÃO " + Roman(gen);
+            if (signGeneration != gen)
+            {
+                signGeneration = gen;
+                signText.sprite = Art.WorldText("NÚCLEO VIVO · GERAÇÃO " + Roman(gen), Palette.ConcreteLight);
+            }
         }
 
         public static string Roman(int n)
@@ -574,7 +643,7 @@ namespace NucleoVivo
             {
                 float wave = 0.5f + 0.5f * Mathf.Sin(time * 3f - i * 0.6f);
                 float k = Mathf.Clamp01(idle + wave * 0.2f * activity + tapFlash);
-                reactorLights[i].color = Color.Lerp(Palette.PetrolLight, Palette.Cyan, k);
+                reactorLights[i].color = k > 0.7f ? Palette.Cyan : k > 0.45f ? Palette.CyanSoft : Palette.PetrolLight;
             }
             reactorHalo.color = Palette.Cyan.WithAlpha(0.06f + 0.05f * activity + 0.3f * tapFlash + 0.25f * installFlash);
             float squash = 1f - 0.025f * tapFlash;
@@ -589,7 +658,7 @@ namespace NucleoVivo
 
             foreach (var m in monitors)
                 if (m.gameObject.activeInHierarchy && !IsGhost(m))
-                    m.color = Color.Lerp(Palette.CyanSoft, Palette.Cyan, Mathf.PerlinNoise(m.transform.position.x * 3f, time * 2f));
+                    m.color = Mathf.PerlinNoise(m.transform.position.x * 3f, time * 2f) > 0.5f ? Palette.Cyan : Palette.CyanSoft;
 
             foreach (var b in blinkers)
                 if (b.gameObject.activeInHierarchy && !IsGhost(b))
@@ -641,7 +710,7 @@ namespace NucleoVivo
                 s.sr.transform.position += (Vector3)(s.vel * dt);
                 float sz = s.size * (0.6f + t * 1.4f);
                 s.sr.transform.localScale = new Vector3(sz, sz, 1);
-                s.sr.color = Color.white.WithAlpha(0.35f * Mathf.Sin(t * Mathf.PI) * (1f - darkness));
+                s.sr.color = darkness > 0.5f ? Color.clear : (t < 0.6f ? new Color(0.86f, 0.9f, 0.9f, 1f) : new Color(0.55f, 0.66f, 0.7f, 1f)); // dois tons, sem transparência gradual
             }
 
             // Pop de instalação
@@ -665,13 +734,13 @@ namespace NucleoVivo
             {
                 if (!lines[i].gameObject.activeInHierarchy) continue;
                 float pulse = 0.55f + 0.45f * Mathf.Sin(time * 3f - i * 1.3f);
-                lines[i].color = Color.Lerp(Palette.CyanSoft, Palette.Cyan, pulse).WithAlpha(0.6f + 0.4f * pulse);
+                lines[i].color = pulse > 0.6f ? Palette.Cyan : Palette.CyanSoft;
             }
         }
 
         bool IsGhost(SpriteRenderer sr)
         {
-            return sr.color.a < 0.2f && Mathf.Abs(sr.color.b - Palette.Cyan.b) < 0.01f;
+            return sr.color.a < 0.2f && Mathf.Abs(sr.color.b - Palette.ConcreteLight.b) < 0.01f;
         }
 
         void Emit(Vector3 pos, float scale)
@@ -682,7 +751,7 @@ namespace NucleoVivo
                 s.active = true;
                 s.life = 0;
                 s.maxLife = 2.2f + UnityEngine.Random.value * 1.2f;
-                s.size = (0.5f + UnityEngine.Random.value * 0.4f) * scale;
+                s.size = (0.25f + UnityEngine.Random.value * 0.2f) * scale;
                 s.vel = new Vector2(0.12f + UnityEngine.Random.value * 0.1f, 0.35f + UnityEngine.Random.value * 0.2f) * scale;
                 s.sr.transform.position = pos + new Vector3((UnityEngine.Random.value - 0.5f) * 0.4f * scale, 0, 0);
                 s.sr.gameObject.SetActive(true);
