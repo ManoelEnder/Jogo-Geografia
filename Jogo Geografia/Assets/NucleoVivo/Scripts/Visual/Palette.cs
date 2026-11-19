@@ -39,17 +39,17 @@ namespace NucleoVivo
         public static readonly Color CyanSoft = H("#1FB7C9");
 
         // Interface
-        public static readonly Color UiBackground = H("#141716");
-        public static readonly Color UiCard = H("#1D2120");
-        public static readonly Color UiCardLight = H("#252A29");
-        public static readonly Color UiCardHighlight = H("#2F3534");
-        public static readonly Color UiBorder = H("#454D4B");
-        public static readonly Color UiText = H("#ECEEE9");
-        public static readonly Color UiMuted = H("#9AA29E");
-        public static readonly Color UiPositive = H("#86C995");
-        public static readonly Color UiNegative = H("#E3826F");
-        public static readonly Color UiButton = H("#4C7556");
-        public static readonly Color UiButtonDisabled = H("#2C3130");
+        public static readonly Color UiBackground = H("#2B231D");
+        public static readonly Color UiCard = H("#3A3027");
+        public static readonly Color UiCardLight = H("#46392E");
+        public static readonly Color UiCardHighlight = H("#5A4836");
+        public static readonly Color UiBorder = H("#6B5440");
+        public static readonly Color UiText = H("#F1E6CF");
+        public static readonly Color UiMuted = H("#BFAF95");
+        public static readonly Color UiPositive = H("#A9C77A");
+        public static readonly Color UiNegative = H("#E08A6E");
+        public static readonly Color UiButton = H("#6A7A3E");
+        public static readonly Color UiButtonDisabled = H("#4A423A");
 
         public static Color WithAlpha(this Color c, float a) { c.a = a; return c; }
     }

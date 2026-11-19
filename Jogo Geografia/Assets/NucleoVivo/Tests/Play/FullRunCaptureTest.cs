@@ -71,6 +71,7 @@ namespace NucleoVivo.Tests
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
             canvas.worldCamera = plant.PresentCamera;
             canvas.planeDistance = 1f;
+            canvas.sortingOrder = 32767; // acima dos sprites do cenário
             for (int i = 0; i < 4; i++) yield return null;
         }
 
@@ -194,14 +195,14 @@ namespace NucleoVivo.Tests
             Assert.IsTrue(gm.OpenArea(vila));
             Assert.IsTrue(gm.OpenArea(portoArea));
             Assert.IsTrue(gm.State.openAreas.Contains("vila"));
-            plant.FocusX(vila.mapX, true);
+            plant.FocusOn(plant.Areas.CenterOf(vila), true);
             Call("ShowTab", 1);
             yield return Wait(1.5f);
             yield return Capture("06b_vila");
-            plant.FocusX(portoArea.mapX, true);
+            plant.FocusOn(plant.Areas.CenterOf(portoArea), true);
             yield return Wait(1.5f);
             yield return Capture("06c_porto");
-            plant.FocusX(gm.Config.FindArea("laboratorio").mapX, true);
+            plant.FocusOn(plant.Areas.CenterOf(gm.Config.FindArea("laboratorio")), true);
             yield return Wait(0.5f);
             yield return Capture("06d_area_trancada");
             Call("WorldDrag", new Vector2(600f, 0f));

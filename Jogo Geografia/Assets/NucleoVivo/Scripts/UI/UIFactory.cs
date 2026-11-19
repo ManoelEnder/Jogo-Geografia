@@ -6,18 +6,20 @@ using UnityEngine.UI;
 
 namespace NucleoVivo
 {
-    /// <summary>Atalhos para montar uGUI por código com layouts automáticos.</summary>
+    /// <summary>Atalhos para montar a interface por código, com as molduras e ícones pintados.</summary>
     public static class UIFactory
     {
         static Font font;
+
+        /// <summary>Fonte serifada do sistema (Georgia no Windows), combinando com a arte pintada.</summary>
         public static Font DefaultFont
         {
             get
             {
                 if (font == null)
                 {
-                    try { font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
-                    if (font == null) font = Font.CreateDynamicFontFromOSFont("Arial", 32);
+                    try { font = Font.CreateDynamicFontFromOSFont(new[] { "Georgia", "Palatino Linotype", "Book Antiqua", "Times New Roman" }, 32); } catch { }
+                    if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
                 }
                 return font;
             }
@@ -27,8 +29,8 @@ namespace NucleoVivo
         {
             public Button button;
             public Image bg;
-            public PixelText label;
-            public PixelText sub;
+            public Text label;
+            public Text sub;
             public RectTransform rt;
             public LayoutElement layout;
         }
@@ -36,7 +38,7 @@ namespace NucleoVivo
         public static RectTransform Rect(string name, Transform parent)
         {
             var go = new GameObject(name, typeof(RectTransform));
-            go.layer = 5; // UI
+            go.layer = 5;
             var rt = (RectTransform)go.transform;
             rt.SetParent(parent, false);
             return rt;
@@ -56,52 +58,87 @@ namespace NucleoVivo
             return rt;
         }
 
+        static float Lum(Color c) => 0.3f * c.r + 0.59f * c.g + 0.11f * c.b;
+        static bool Same(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.02f;
+
+        /// <summary>
+        /// Aplica a cor pedida usando as molduras pintadas: painéis escuros, cartões claros, destaques
+        /// e botões (verde, marrom ou apagado).
+        /// </summary>
+        public static void Tint(Image img, Color c)
+        {
+            if (img == null) return;
+            string n = img.sprite != null ? img.sprite.name : "";
+            if (n.StartsWith("ui_button"))
+            {
+                string s = Same(c, Palette.UiButton) ? "ui_button" : Same(c, Palette.UiButtonDisabled) ? "ui_button_off" : "ui_button_alt";
+                img.sprite = Pinturas.Get(s);
+                img.color = Same(c, Palette.UiCardHighlight) ? new Color(1f, 0.93f, 0.8f, 1f) : Color.white;
+                return;
+            }
+            if (n.StartsWith("ui_panel"))
+            {
+                img.sprite = Pinturas.Get(Lum(c) < 0.16f ? "ui_panel" : "ui_panel_light");
+                Color t = Same(c, Palette.UiCardHighlight) ? new Color(1f, 0.9f, 0.74f) : Color.white;
+                t.a = c.a;
+                img.color = t;
+                return;
+            }
+            img.color = c;
+        }
+
         public static Image Img(RectTransform rt, Color color, Sprite sprite = null, bool raycast = false)
         {
             var img = rt.gameObject.GetComponent<Image>();
             if (img == null) img = rt.gameObject.AddComponent<Image>();
-            img.sprite = sprite ?? Art.RoundRect;
-            img.type = img.sprite == Art.RoundRect || img.sprite == Art.RoundRectOutline ? Image.Type.Sliced : Image.Type.Simple;
-            img.pixelsPerUnitMultiplier = 1f / PixelText.UiPixel; // 1 texel da moldura = 1 pixel da interface
-            img.color = color;
+            bool panel = sprite == null || sprite == Art.RoundRect || sprite == Art.RoundRectOutline;
+            img.sprite = panel ? Pinturas.Get("ui_panel") : sprite;
+            img.type = panel ? Image.Type.Sliced : Image.Type.Simple;
+            img.pixelsPerUnitMultiplier = 1.2f;
             img.raycastTarget = raycast;
+            if (panel) Tint(img, color); else img.color = color;
             return img;
         }
 
-        public static Image Panel(string name, Transform parent, Color color)
-        {
-            var rt = Rect(name, parent);
-            return Img(rt, color, Art.RoundRect, true);
-        }
+        public static Image Panel(string name, Transform parent, Color color) => Img(Rect(name, parent), color, null, true);
 
         public static Image Icon(Transform parent, IconKind kind, float size, bool badge = true)
         {
-            // Ícone 18x18 ampliado por múltiplo inteiro do pixel da interface.
-            int scale = size >= 100 ? 2 : 1;
-            float icon = 18 * PixelText.UiPixel * scale;
-            float holderSize = badge ? icon + 6 * PixelText.UiPixel : icon;
+            size = Mathf.Round(size * 1.2f);
             var holder = Rect("ícone", parent);
-            LE(holder.gameObject, holderSize, holderSize, holderSize, holderSize);
-            if (badge) Img(holder, Palette.UiCardHighlight);
+            LE(holder.gameObject, size, size, size, size);
+            if (badge)
+            {
+                var bg = holder.gameObject.AddComponent<Image>();
+                bg.sprite = Pinturas.Get("ui_badge");
+                bg.raycastTarget = false;
+            }
             var ic = Rect("desenho", holder);
             ic.anchorMin = ic.anchorMax = new Vector2(0.5f, 0.5f);
-            ic.sizeDelta = new Vector2(icon, icon);
+            float inner = size * (badge ? 0.62f : 1f);
+            ic.sizeDelta = new Vector2(inner, inner);
             var img = ic.gameObject.AddComponent<Image>();
-            img.sprite = Art.Icon(kind);
+            img.sprite = Pinturas.Icon(kind);
+            img.preserveAspect = true;
             img.raycastTarget = false;
             return img;
         }
 
-        public static PixelText Label(Transform parent, string text, int size, Color color, TextAnchor anchor = TextAnchor.MiddleLeft, bool bold = false)
+        public static Text Label(Transform parent, string text, int size, Color color, TextAnchor anchor = TextAnchor.MiddleLeft, bool bold = false)
         {
             var rt = Rect("texto", parent);
-            if (rt.GetComponent<CanvasRenderer>() == null) rt.gameObject.AddComponent<CanvasRenderer>();
-            var t = rt.gameObject.AddComponent<PixelText>();
+            var t = rt.gameObject.AddComponent<Text>();
+            t.font = DefaultFont;
             t.text = text;
             t.fontSize = size;
             t.color = color;
             t.alignment = anchor;
+            t.fontStyle = bold || size >= 44 ? FontStyle.Bold : FontStyle.Normal;
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
+            t.verticalOverflow = VerticalWrapMode.Overflow;
+            t.supportRichText = true;
             t.raycastTarget = false;
+            t.lineSpacing = 1.05f;
             return t;
         }
 
@@ -140,24 +177,31 @@ namespace NucleoVivo
         public static ButtonView Button(Transform parent, string label, Color color, UnityAction onClick, int fontSize = 36, string sub = null)
         {
             var rt = Rect("botão " + label, parent);
-            var bg = Img(rt, color, Art.RoundRect, true);
+            var bg = rt.gameObject.AddComponent<Image>();
+            bg.sprite = Pinturas.Get("ui_button");
+            bg.type = Image.Type.Sliced;
+            bg.pixelsPerUnitMultiplier = 1.2f;
+            Tint(bg, color);
             var b = rt.gameObject.AddComponent<Button>();
             b.targetGraphic = bg;
             var colors = b.colors;
             colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1, 1, 1, 0.92f);
-            colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
-            colors.disabledColor = new Color(1, 1, 1, 1f);
-            colors.fadeDuration = 0.06f;
+            colors.highlightedColor = new Color(0.95f, 0.95f, 0.92f, 1f);
+            colors.pressedColor = new Color(0.8f, 0.78f, 0.74f, 1f);
+            colors.disabledColor = Color.white;
+            colors.fadeDuration = 0.08f;
             b.colors = colors;
             if (onClick != null) b.onClick.AddListener(onClick);
 
             var v = VLayout(rt.gameObject, 14, 2, TextAnchor.MiddleCenter);
-            v.padding = new RectOffset(18, 18, 12, 12);
+            v.padding = new RectOffset(18, 18, 8, 14);
             var lbl = Label(rt, label, fontSize, Palette.UiText, TextAnchor.MiddleCenter, true);
-            PixelText subT = null;
+            var sh = lbl.gameObject.AddComponent<Shadow>();
+            sh.effectColor = new Color(0, 0, 0, 0.45f);
+            sh.effectDistance = new Vector2(1.5f, -1.5f);
+            Text subT = null;
             if (sub != null) subT = Label(rt, sub, Mathf.RoundToInt(fontSize * 0.75f), Palette.UiText.WithAlpha(0.85f), TextAnchor.MiddleCenter);
-            var le = LE(rt.gameObject, -1, -1, 96, -1);
+            var le = LE(rt.gameObject, -1, -1, 60, -1);
             return new ButtonView { button = b, bg = bg, label = lbl, sub = subT, rt = rt, layout = le };
         }
 
@@ -172,7 +216,7 @@ namespace NucleoVivo
             scroll.scrollSensitivity = 40f;
             scroll.decelerationRate = 0.12f;
             var hit = root.gameObject.AddComponent<Image>();
-            hit.color = new Color(0, 0, 0, 0); // recebe arrastos
+            hit.color = new Color(0, 0, 0, 0);
             var viewport = Rect("viewport", root);
             Stretch(viewport);
             viewport.gameObject.AddComponent<RectMask2D>();
@@ -191,20 +235,13 @@ namespace NucleoVivo
         public static void SetInteractable(ButtonView bv, bool on, Color onColor)
         {
             bv.button.interactable = on;
-            bv.bg.color = on ? onColor : Palette.UiButtonDisabled;
+            Tint(bv.bg, on ? onColor : Palette.UiButtonDisabled);
             bv.label.color = on ? Palette.UiText : Palette.UiMuted;
             if (bv.sub != null) bv.sub.color = on ? Palette.UiText.WithAlpha(0.85f) : Palette.UiMuted;
         }
     }
 
-    /// <summary>Área invisível sobre o reator que recebe toques (inclusive multitoque).</summary>
-    public class TapArea : MonoBehaviour, IPointerDownHandler
-    {
-        public Action<PointerEventData> onDown;
-        public void OnPointerDown(PointerEventData e) => onDown?.Invoke(e);
-    }
-
-    /// <summary>Ajusta o retângulo à área segura do aparelho (notch, barra de gestos).</summary>
+    /// <summary>Ajusta o retângulo à área segura da tela.</summary>
     [RequireComponent(typeof(RectTransform))]
     public class SafeArea : MonoBehaviour
     {

@@ -30,55 +30,55 @@ namespace NucleoVivo
         RectTransform safe, worldLayer, floatLayer, hud, notices, panel, modalLayer, mapBar, tooltip;
 
         // topo
-        PixelText balanceText, clickText, passiveText, repText;
+        Text balanceText, clickText, passiveText, repText;
         Image repFill;
         RectTransform headline;
         Image headlineBg, headlineIcon;
-        PixelText headlineText, effectsText;
+        Text headlineText, effectsText;
         GameObject effectsPill;
 
         // toque no reator
         RectTransform tutorial;
-        PixelText tutorialText;
+        Text tutorialText;
 
         // abas
         readonly RectTransform[] pages = new RectTransform[4];
         readonly UIFactory.ButtonView[] tabButtons = new UIFactory.ButtonView[4];
         readonly Image[] tabBadges = new Image[4];
-        PixelText tabTitle;
+        Text tabTitle;
         int currentTab;
 
-        class UpgradeRow { public int index; public GameObject root; public Image bg, icon; public PixelText title, gain; public UIFactory.ButtonView buy; }
+        class UpgradeRow { public int index; public GameObject root; public Image bg, icon; public Text title, gain; public UIFactory.ButtonView buy; }
         readonly List<UpgradeRow> upgradeRows = new List<UpgradeRow>();
 
-        class AreaRow { public AreaDef def; public Image bg, icon; public PixelText title, info; public UIFactory.ButtonView open, go; }
+        class AreaRow { public AreaDef def; public Image bg, icon; public Text title, info; public UIFactory.ButtonView open, go; }
         readonly List<AreaRow> areaRows = new List<AreaRow>();
         readonly List<KeyValuePair<AreaDef, UIFactory.ButtonView>> mapButtons = new List<KeyValuePair<AreaDef, UIFactory.ButtonView>>();
         AreaDef selectedArea;
 
         // eventos
-        PixelText repCardText, repCardHint, eventStatusText, eventExpireText, effectsListText;
+        Text repCardText, repCardHint, eventStatusText, eventExpireText, effectsListText;
         Image repCardFill;
         RectTransform eventSlot;
         string builtEventKey;
-        readonly List<KeyValuePair<UIFactory.ButtonView, PixelText>> choiceViews = new List<KeyValuePair<UIFactory.ButtonView, PixelText>>();
+        readonly List<KeyValuePair<UIFactory.ButtonView, Text>> choiceViews = new List<KeyValuePair<UIFactory.ButtonView, Text>>();
 
         // renascimento
-        PixelText rbProgressText, rbGainText, rbNextText, rbOwnedText, statsText;
+        Text rbProgressText, rbGainText, rbNextText, rbOwnedText, statsText;
         Image rbFill;
         UIFactory.ButtonView rbButton;
-        class PermRow { public PermanentUpgradeDef def; public PixelText title, desc; public UIFactory.ButtonView buy; }
+        class PermRow { public PermanentUpgradeDef def; public Text title, desc; public UIFactory.ButtonView buy; }
         readonly List<PermRow> permRows = new List<PermRow>();
 
         // modais, avisos, dica
         GameObject settingsModal, confirmModal;
-        PixelText confirmBody, soundLabel, resetLabel, captionText, toastText, tooltipText;
+        Text confirmBody, soundLabel, resetLabel, captionText, toastText, tooltipText;
         Image toastBg;
         float toastTimer, refreshTimer;
         bool busy, resetArmed;
         Func<string> hoverText;
 
-        class Floater { public RectTransform rt; public PixelText text; public float age; public double value; public bool active; public float born; public Vector2 start; }
+        class Floater { public RectTransform rt; public Text text; public float age; public double value; public bool active; public float born; public Vector2 start; }
         readonly List<Floater> floaters = new List<Floater>();
 
         // ---------- inicialização ----------
@@ -130,10 +130,9 @@ namespace NucleoVivo
         /// <summary>1 pixel da interface (3 unidades) = número inteiro de pixels da tela sempre que possível.</summary>
         void UpdateScale()
         {
-            float w = PixelWidth, h = Mathf.Max(1, PixelHeight);
-            float k = Mathf.Min(w / 640f, h / 360f);
-            if (k >= 1f) k = Mathf.Floor(k);
-            scaler.scaleFactor = Mathf.Max(0.1f, k / PixelText.UiPixel);
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.matchWidthOrHeight = 0.5f;
         }
 
         // ---------- construção ----------
@@ -265,7 +264,7 @@ namespace NucleoVivo
             var bv = UIFactory.Button(mapBar, "", Palette.UiCardLight, () =>
             {
                 Play(Sfx.Ui);
-                plant.FocusX(a != null ? a.mapX : 0f);
+                if (a != null) plant.FocusOn(plant.Areas.CenterOf(a)); else plant.FocusX(0f);
                 if (a != null) { selectedArea = a; ShowTab(TabAreas); }
             }, 30);
             DestroyImmediate(bv.rt.GetComponent<VerticalLayoutGroup>());
@@ -441,16 +440,16 @@ namespace NucleoVivo
                 if (!unlocked) shownLocked = true;
                 if (row.root.activeSelf != visible) row.root.SetActive(visible);
                 if (!visible) continue;
-                row.icon.sprite = Art.Icon(unlocked ? u.icon : IconKind.Lock);
+                row.icon.sprite = Pinturas.Icon(unlocked ? u.icon : IconKind.Lock);
                 row.title.text = u.displayName + (lv > 0 ? " <color=#9AA29E>" + lv + "</color>" : "");
                 if (!unlocked)
                 {
                     row.gain.text = "libera com " + NumberFormat.Short(u.unlockAtProduced);
                     row.buy.rt.gameObject.SetActive(false);
-                    row.bg.color = Palette.UiCard.WithAlpha(0.6f);
+                    UIFactory.Tint(row.bg, Palette.UiCard.WithAlpha(0.6f));
                     continue;
                 }
-                row.bg.color = Palette.UiCard;
+                UIFactory.Tint(row.bg, Palette.UiCard);
                 row.buy.rt.gameObject.SetActive(true);
                 row.gain.text = Gain(row.index);
                 row.buy.label.text = NumberFormat.Short(eco.Cost(row.index));
@@ -487,7 +486,7 @@ namespace NucleoVivo
                 UIFactory.LE(buttons.gameObject, 150, 150, -1, -1, 0);
                 row.open = UIFactory.Button(buttons, "Abrir", Palette.UiButton, () => OpenArea(def), 30);
                 UIFactory.LE(row.open.rt.gameObject, 150, 150, 60, 60);
-                row.go = UIFactory.Button(buttons, "Ver", Palette.UiCardLight, () => { Play(Sfx.Ui); selectedArea = def; plant.FocusX(def.mapX); }, 30);
+                row.go = UIFactory.Button(buttons, "Ver", Palette.UiCardLight, () => { Play(Sfx.Ui); selectedArea = def; plant.FocusOn(plant.Areas.CenterOf(def)); }, 30);
                 UIFactory.LE(row.go.rt.gameObject, 150, 150, 60, 60);
                 AddTooltip(row.bg.gameObject, () => def.displayName + "\n" + def.description + "\n\n" + BonusText(def) + " (permanente)\n" + AreaStatus(def));
                 areaRows.Add(row);
@@ -517,7 +516,7 @@ namespace NucleoVivo
         void OpenArea(AreaDef a)
         {
             if (busy) return;
-            if (gm.OpenArea(a)) plant.FocusX(a.mapX); else Play(Sfx.Error);
+            if (gm.OpenArea(a)) plant.FocusOn(plant.Areas.CenterOf(a)); else Play(Sfx.Error);
             RefreshAreas();
         }
 
@@ -527,12 +526,12 @@ namespace NucleoVivo
             foreach (var row in areaRows)
             {
                 bool open = eco.IsAreaOpen(row.def), avail = eco.IsAreaAvailable(row.def);
-                row.icon.sprite = Art.Icon(avail ? row.def.icon : IconKind.Lock);
+                row.icon.sprite = Pinturas.Icon(avail ? row.def.icon : IconKind.Lock);
                 row.info.text = open ? BonusText(row.def) : avail ? BonusText(row.def) : "libera com " + NumberFormat.Short(row.def.unlockAtProduced);
                 row.open.rt.gameObject.SetActive(!open);
                 row.open.label.text = NumberFormat.Short(row.def.cost);
                 UIFactory.SetInteractable(row.open, eco.CanOpenArea(row.def), Palette.UiButton);
-                row.bg.color = row.def == selectedArea ? Palette.UiCardHighlight : Palette.UiCard;
+                UIFactory.Tint(row.bg, row.def == selectedArea ? Palette.UiCardHighlight : Palette.UiCard);
                 row.title.text = row.def.displayName + (open ? " <color=#86C995>aberta</color>" : "");
             }
         }
@@ -597,7 +596,7 @@ namespace NucleoVivo
                 var bv = UIFactory.Button(card.transform, c.label, Palette.UiButton, () => Choose(idx), 30);
                 var effect = UIFactory.Label(bv.rt, "", 30, Palette.UiText, TextAnchor.MiddleCenter);
                 AddTooltip(bv.rt.gameObject, () => c.description);
-                choiceViews.Add(new KeyValuePair<UIFactory.ButtonView, PixelText>(bv, effect));
+                choiceViews.Add(new KeyValuePair<UIFactory.ButtonView, Text>(bv, effect));
             }
         }
 
@@ -640,7 +639,7 @@ namespace NucleoVivo
                     if (!can) desc += "\nFaltam " + NumberFormat.Short(ev.ChoiceCost(c) - s.energy);
                     choiceViews[i].Value.text = desc;
                     bv.button.interactable = can;
-                    bv.bg.color = can ? (i == 0 ? Palette.UiButton : Palette.UiCardHighlight) : Palette.UiButtonDisabled;
+                    UIFactory.Tint(bv.bg, can ? (i == 0 ? Palette.UiButton : Palette.UiCardHighlight) : Palette.UiButtonDisabled);
                     choiceViews[i].Value.color = can ? Palette.UiText : Palette.UiNegative;
                 }
             }
@@ -862,6 +861,9 @@ namespace NucleoVivo
         {
             captionText = UIFactory.Label(safe, "", 50, Palette.UiText, TextAnchor.MiddleCenter);
             UIFactory.Anchor((RectTransform)captionText.transform, new Vector2(0, 0.6f), new Vector2(1, 0.6f), new Vector2(0.5f, 0.5f), new Vector2(-panelWidth * 0.5f, 0), new Vector2(-panelWidth - 60, 120));
+            var cs = captionText.gameObject.AddComponent<Outline>();
+            cs.effectColor = new Color(0.1f, 0.07f, 0.04f, 0.9f);
+            cs.effectDistance = new Vector2(2f, -2f);
             captionText.gameObject.SetActive(false);
 
             var toast = UIFactory.Rect("Aviso", safe);
@@ -894,6 +896,9 @@ namespace NucleoVivo
             for (int i = 0; i < 14; i++)
             {
                 var t = UIFactory.Label(floatLayer, "", 50, Palette.UiText, TextAnchor.MiddleCenter);
+                var ol = t.gameObject.AddComponent<Outline>();
+                ol.effectColor = new Color(0.12f, 0.08f, 0.05f, 0.85f);
+                ol.effectDistance = new Vector2(2f, -2f);
                 var rt = (RectTransform)t.transform;
                 rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
                 rt.sizeDelta = new Vector2(420, 66);
@@ -936,7 +941,7 @@ namespace NucleoVivo
                 f.age += dt;
                 float t = f.age / 0.9f;
                 if (t >= 1f) { f.active = false; f.text.gameObject.SetActive(false); continue; }
-                float rise = Mathf.Round(150f * (1f - (1f - t) * (1f - t)) / PixelText.UiPixel) * PixelText.UiPixel;
+                float rise = Mathf.Round(150f * (1f - (1f - t) * (1f - t)) / 3f) * 3f;
                 f.rt.anchoredPosition = f.start + new Vector2(0, rise);
                 f.text.color = t < 0.75f ? Palette.UiText : Palette.UiMuted;
             }
@@ -1071,10 +1076,10 @@ namespace NucleoVivo
             if (headline.gameObject.activeSelf != showHead) headline.gameObject.SetActive(showHead);
             if (showHead)
             {
-                headlineIcon.sprite = Art.Icon(e.icon);
+                headlineIcon.sprite = Pinturas.Icon(e.icon);
                 headlineText.text = e.headline;
                 bool blink = Mathf.Repeat(Time.unscaledTime, 1f) < 0.5f;
-                headlineBg.color = blink ? Palette.UiCardHighlight : Palette.UiCard;
+                UIFactory.Tint(headlineBg, blink ? Palette.UiCardHighlight : Palette.UiCard);
             }
             bool showFx = s.effects.Count > 0 && !busy;
             if (effectsPill.activeSelf != showFx) effectsPill.SetActive(showFx);
@@ -1100,8 +1105,8 @@ namespace NucleoVivo
                 if (a == null) continue;
                 bool open = gm.Economy.IsAreaOpen(a), avail = gm.Economy.IsAreaAvailable(a);
                 var img = kv.Value.rt.GetComponentsInChildren<Image>()[1];
-                img.sprite = Art.Icon(open || avail ? a.icon : IconKind.Lock);
-                kv.Value.bg.color = open ? Palette.UiCardLight : avail ? Palette.UiButton : Palette.UiCard;
+                img.sprite = Pinturas.Icon(open || avail ? a.icon : IconKind.Lock);
+                UIFactory.Tint(kv.Value.bg, open ? Palette.UiCardLight : avail ? Palette.UiButton : Palette.UiCard);
             }
         }
 
@@ -1126,7 +1131,7 @@ namespace NucleoVivo
             for (int i = 0; i < 4; i++)
             {
                 pages[i].gameObject.SetActive(i == tab);
-                tabButtons[i].bg.color = i == tab ? Palette.UiCardHighlight : Palette.UiCard;
+                UIFactory.Tint(tabButtons[i].bg, i == tab ? Palette.UiCardHighlight : Palette.UiCard);
             }
             RefreshCurrentTab();
         }
